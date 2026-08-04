@@ -121,7 +121,7 @@ fn addExamples(
     optimize: std.builtin.OptimizeMode,
     brotli_mod: *std.Build.Module,
 ) void {
-    const examples_step = b.step("examples", "Build all examples");
+    const examples_step = b.step("examples", "Build and install all examples");
 
     const example_files = [_][]const u8{
         "01_quick_compress",
@@ -146,7 +146,8 @@ fn addExamples(
             .name = name,
             .root_module = exe_mod,
         });
-        b.installArtifact(exe);
-        examples_step.dependOn(&exe.step);
+        const install_exe = b.addInstallArtifact(exe, .{});
+        b.getInstallStep().dependOn(&install_exe.step);
+        examples_step.dependOn(&install_exe.step);
     }
 }
