@@ -8,6 +8,7 @@ pub const common = struct {
 
 pub const encoder = struct {
     pub const Encoder = @import("encoder/encoder.zig").Encoder;
+    pub const PreparedDictionary = @import("encoder/encoder.zig").PreparedDictionary;
     pub const options = @import("encoder/options.zig");
     pub const oneshot = @import("encoder/oneshot.zig");
     pub const EncoderOptions = options.EncoderOptions;
@@ -20,26 +21,55 @@ pub const decoder = struct {
     pub const DecoderOptions = options.DecoderOptions;
 };
 
-pub const PreparedDictionary = @import("common/dictionary.zig").PreparedDictionary;
-pub const SharedDictionary = @import("common/dictionary.zig").SharedDictionary;
-pub const DictionaryType = @import("common/dictionary.zig").DictionaryType;
+pub const PreparedDictionary = encoder.PreparedDictionary;
+pub const SharedDictionary = common.dictionary.SharedDictionary;
+pub const DictionaryType = common.types.DictionaryType;
 
+// Encoder enums
 pub const EncoderMode = common.types.EncoderMode;
+pub const EncoderBase64Mode = common.types.EncoderBase64Mode;
+pub const EncoderParameter = common.types.EncoderParameter;
 pub const EncoderOperation = common.types.EncoderOperation;
 pub const EncoderOptions = encoder.EncoderOptions;
+
+// Decoder enums
+pub const DecoderParameter = common.types.DecoderParameter;
 pub const DecoderResult = common.types.DecoderResult;
 pub const DecoderResultTag = common.types.DecoderResultTag;
 pub const DecoderOptions = decoder.DecoderOptions;
-pub const DecodeError = common.types.DecodeError;
+
+// Error types
 pub const ErrorCode = common.types.ErrorCode;
+pub const DecodeError = common.types.DecodeError;
 pub const StreamResult = common.types.StreamResult;
 pub const Version = common.types.Version;
 
+// Error sets
 pub const EncoderError = common.types.EncoderError;
 pub const DecoderError = common.types.DecoderError;
 pub const AllocatorError = common.types.AllocatorError;
 pub const DictionaryError = common.types.DictionaryError;
 
+// Encoder constants
+pub const MIN_WINDOW_BITS = common.types.MIN_WINDOW_BITS;
+pub const MAX_WINDOW_BITS = common.types.MAX_WINDOW_BITS;
+pub const LARGE_MAX_WINDOW_BITS = common.types.LARGE_MAX_WINDOW_BITS;
+pub const MIN_INPUT_BLOCK_BITS = common.types.MIN_INPUT_BLOCK_BITS;
+pub const MAX_INPUT_BLOCK_BITS = common.types.MAX_INPUT_BLOCK_BITS;
+pub const MIN_QUALITY = common.types.MIN_QUALITY;
+pub const MAX_QUALITY = common.types.MAX_QUALITY;
+pub const DEFAULT_QUALITY = common.types.DEFAULT_QUALITY;
+pub const DEFAULT_WINDOW = common.types.DEFAULT_WINDOW;
+pub const DEFAULT_BASE64_MODE = common.types.DEFAULT_BASE64_MODE;
+pub const DEFAULT_MAX_BASE64_REGIONS = common.types.DEFAULT_MAX_BASE64_REGIONS;
+
+// Shared dictionary constants
+pub const SHARED_MIN_DICTIONARY_WORD_LENGTH = common.types.SHARED_MIN_DICTIONARY_WORD_LENGTH;
+pub const SHARED_MAX_DICTIONARY_WORD_LENGTH = common.types.SHARED_MAX_DICTIONARY_WORD_LENGTH;
+pub const SHARED_NUM_DICTIONARY_CONTEXTS = common.types.SHARED_NUM_DICTIONARY_CONTEXTS;
+pub const SHARED_MAX_COMPOUND_DICTS = common.types.SHARED_MAX_COMPOUND_DICTS;
+
+// Convenience functions
 pub fn version() Version {
     return @import("version.zig").version.encoder();
 }

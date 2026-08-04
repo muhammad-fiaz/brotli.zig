@@ -132,6 +132,8 @@ fn addExamples(
         "06_shared_dictionary",
         "07_large_window",
         "08_error_handling",
+        "09_metadata",
+        "10_base64_mode",
     };
 
     inline for (example_files) |name| {

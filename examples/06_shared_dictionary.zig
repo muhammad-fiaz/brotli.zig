@@ -13,12 +13,19 @@ pub fn main() !void {
     var enc = try brotli.encoder.Encoder.init(allocator, .{ .quality = 6 });
     defer enc.deinit();
 
+    try enc.attachPreparedDictionary(&prepared);
+
     var output: [4096]u8 = undefined;
     const result = try enc.compressStream(.finish, data, &output);
-    _ = result;
+    const compressed = output[0..result.bytes_produced];
+
+    const decompressed = try brotli.decompress(allocator, compressed);
+    defer allocator.free(decompressed);
 
     std.debug.print("Shared dictionary example:\n", .{});
     std.debug.print("  Dictionary size: {d} bytes\n", .{dictionary_data.len});
     std.debug.print("  Data size: {d} bytes\n", .{data.len});
-    std.debug.print("  Prepared dictionary attached successfully\n", .{});
+    std.debug.print("  Compressed: {d} bytes\n", .{compressed.len});
+    std.debug.print("  Prepared dictionary attached and used successfully\n", .{});
+    std.debug.print("  Round-trip OK: {}\n", .{std.mem.eql(u8, data, decompressed)});
 }

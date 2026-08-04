@@ -76,3 +76,74 @@ fn brotliFree(ctx: ?*anyopaque, address: ?*anyopaque) callconv(.c) void {
     const start = raw_ptr - alloc_header_size;
     bridge.allocator.free(start[0..total_size]);
 }
+
+test "CAllocator fromAllocator" {
+    var ca = CAllocator.fromAllocator(std.testing.allocator);
+    defer ca.deinit();
+    try std.testing.expect(ca.alloc_fn != null);
+    try std.testing.expect(ca.free_fn != null);
+    try std.testing.expect(ca.opaque_ptr != null);
+}
+
+test "CAllocator cAllocator" {
+    const ca = CAllocator.cAllocator();
+    try std.testing.expect(ca.alloc_fn == null);
+    try std.testing.expect(ca.free_fn == null);
+    try std.testing.expect(ca.opaque_ptr == null);
+}
+
+test "CAllocator alloc and free through bridge" {
+    var ca = CAllocator.fromAllocator(std.testing.allocator);
+    defer ca.deinit();
+
+    const alloc_fn = ca.alloc_fn.?;
+    const free_fn = ca.free_fn.?;
+    const ctx = ca.opaque_ptr;
+
+    const ptr = alloc_fn(ctx, 64);
+    try std.testing.expect(ptr != null);
+
+    free_fn(ctx, ptr);
+}
+
+test "CAllocator alloc zero size returns null" {
+    var ca = CAllocator.fromAllocator(std.testing.allocator);
+    defer ca.deinit();
+
+    const alloc_fn = ca.alloc_fn.?;
+    const ctx = ca.opaque_ptr;
+
+    const ptr = alloc_fn(ctx, 0);
+    try std.testing.expect(ptr == null);
+}
+
+test "CAllocator free null address is safe" {
+    var ca = CAllocator.fromAllocator(std.testing.allocator);
+    defer ca.deinit();
+
+    const free_fn = ca.free_fn.?;
+    const ctx = ca.opaque_ptr;
+
+    free_fn(ctx, null);
+}
+
+test "CAllocator multiple alloc and free" {
+    var ca = CAllocator.fromAllocator(std.testing.allocator);
+    defer ca.deinit();
+
+    const alloc_fn = ca.alloc_fn.?;
+    const free_fn = ca.free_fn.?;
+    const ctx = ca.opaque_ptr;
+
+    const ptr1 = alloc_fn(ctx, 32);
+    const ptr2 = alloc_fn(ctx, 64);
+    const ptr3 = alloc_fn(ctx, 128);
+
+    try std.testing.expect(ptr1 != null);
+    try std.testing.expect(ptr2 != null);
+    try std.testing.expect(ptr3 != null);
+
+    free_fn(ctx, ptr1);
+    free_fn(ctx, ptr2);
+    free_fn(ctx, ptr3);
+}

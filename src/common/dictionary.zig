@@ -46,33 +46,20 @@ pub const SharedDictionary = struct {
     }
 };
 
-pub const PreparedDictionary = struct {
-    handle: ?*c.BrotliEncoderPreparedDictionary,
-    c_allocator: allocator_mod.CAllocator,
+test "sharedDictionary init and deinit" {
+    var dict = try SharedDictionary.init(std.testing.allocator);
+    defer dict.deinit();
+    try std.testing.expect(dict.handle != null);
+}
 
-    pub fn init(allocator: std.mem.Allocator, dict_type: DictionaryType, data: []const u8, quality: c_int) !PreparedDictionary {
-        const ca = allocator_mod.CAllocator.fromAllocator(allocator);
-        const handle = c.BrotliEncoderPrepareDictionary(
-            @intCast(@intFromEnum(dict_type)),
-            data.len,
-            data.ptr,
-            quality,
-            @ptrCast(ca.alloc_fn),
-            @ptrCast(ca.free_fn),
-            ca.opaque_ptr,
-        );
-        if (handle == null) {
-            ca.deinit();
-            return error.InvalidDictionary;
-        }
-        return .{ .handle = handle, .c_allocator = ca };
-    }
+test "sharedDictionary attach raw" {
+    var dict = try SharedDictionary.init(std.testing.allocator);
+    defer dict.deinit();
+    const data = "shared dictionary data for raw attachment";
+    try dict.attach(.raw, data);
+}
 
-    pub fn deinit(self: *PreparedDictionary) void {
-        if (self.handle) |handle| {
-            c.BrotliEncoderDestroyPreparedDictionary(handle);
-            self.handle = null;
-        }
-        self.c_allocator.deinit();
-    }
-};
+test "dictionaryType enum values" {
+    try std.testing.expectEqual(@as(c_int, 0), @intFromEnum(DictionaryType.raw));
+    try std.testing.expectEqual(@as(c_int, 1), @intFromEnum(DictionaryType.serialized));
+}

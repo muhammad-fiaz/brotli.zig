@@ -23,7 +23,10 @@ pub fn main() !void {
         const result = try dec.decompressStream(chunk, &output);
         switch (result) {
             .success => {
-                total_decompressed += output.len - 0;
+                var size: usize = 0;
+                if (dec.takeOutput(&size)) |_| {
+                    total_decompressed += size;
+                }
                 input_offset = end;
                 break;
             },

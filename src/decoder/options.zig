@@ -21,3 +21,52 @@ pub const DecoderOptions = struct {
         }
     }
 };
+
+test "decoderOptions default" {
+    const opts = DecoderOptions.default();
+    try std.testing.expect(opts.disable_ring_buffer_reallocation == null);
+    try std.testing.expect(opts.large_window == null);
+}
+
+test "decoderOptions with disable_ring_buffer_reallocation" {
+    const opts = DecoderOptions{ .disable_ring_buffer_reallocation = true };
+    try std.testing.expect(opts.disable_ring_buffer_reallocation == true);
+}
+
+test "decoderOptions with large_window" {
+    const opts = DecoderOptions{ .large_window = true };
+    try std.testing.expect(opts.large_window == true);
+}
+
+test "decoderOptions with both params" {
+    const opts = DecoderOptions{
+        .disable_ring_buffer_reallocation = true,
+        .large_window = false,
+    };
+    try std.testing.expect(opts.disable_ring_buffer_reallocation == true);
+    try std.testing.expect(opts.large_window == false);
+}
+
+test "decoderOptions apply disable_ring_buffer_reallocation" {
+    const handle = c.BrotliDecoderCreateInstance(null, null, null);
+    defer c.BrotliDecoderDestroyInstance(handle);
+    const opts = DecoderOptions{ .disable_ring_buffer_reallocation = true };
+    try opts.apply(handle);
+}
+
+test "decoderOptions apply large_window" {
+    const handle = c.BrotliDecoderCreateInstance(null, null, null);
+    defer c.BrotliDecoderDestroyInstance(handle);
+    const opts = DecoderOptions{ .large_window = true };
+    try opts.apply(handle);
+}
+
+test "decoderOptions apply both" {
+    const handle = c.BrotliDecoderCreateInstance(null, null, null);
+    defer c.BrotliDecoderDestroyInstance(handle);
+    const opts = DecoderOptions{
+        .disable_ring_buffer_reallocation = false,
+        .large_window = true,
+    };
+    try opts.apply(handle);
+}

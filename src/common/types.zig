@@ -1,15 +1,32 @@
 const std = @import("std");
 const c = @import("../c.zig").c;
 
-pub const DictionaryType = enum(c_int) {
-    raw = c.BROTLI_SHARED_DICTIONARY_RAW,
-    serialized = c.BROTLI_SHARED_DICTIONARY_SERIALIZED,
-};
+// === Encoder Parameter Enums ===
 
 pub const EncoderMode = enum(c_int) {
     generic = c.BROTLI_MODE_GENERIC,
     text = c.BROTLI_MODE_TEXT,
     font = c.BROTLI_MODE_FONT,
+};
+
+pub const EncoderBase64Mode = enum(c_int) {
+    disabled = c.BROTLI_BASE64_MODE_DISABLED,
+    detection = c.BROTLI_BASE64_MODE_DETECTION,
+};
+
+pub const EncoderParameter = enum(c_int) {
+    mode = c.BROTLI_PARAM_MODE,
+    quality = c.BROTLI_PARAM_QUALITY,
+    lgwin = c.BROTLI_PARAM_LGWIN,
+    lgblock = c.BROTLI_PARAM_LGBLOCK,
+    disable_literal_context_modeling = c.BROTLI_PARAM_DISABLE_LITERAL_CONTEXT_MODELING,
+    size_hint = c.BROTLI_PARAM_SIZE_HINT,
+    large_window = c.BROTLI_PARAM_LARGE_WINDOW,
+    npostfix = c.BROTLI_PARAM_NPOSTFIX,
+    ndirect = c.BROTLI_PARAM_NDIRECT,
+    stream_offset = c.BROTLI_PARAM_STREAM_OFFSET,
+    base64_mode = c.BROTLI_PARAM_BASE64_MODE,
+    max_base64_regions = c.BROTLI_PARAM_MAX_BASE64_REGIONS,
 };
 
 pub const EncoderOperation = enum(c_int) {
@@ -18,6 +35,15 @@ pub const EncoderOperation = enum(c_int) {
     finish = c.BROTLI_OPERATION_FINISH,
     emit_metadata = c.BROTLI_OPERATION_EMIT_METADATA,
 };
+
+// === Decoder Parameter Enums ===
+
+pub const DecoderParameter = enum(c_int) {
+    disable_ring_buffer_reallocation = c.BROTLI_DECODER_PARAM_DISABLE_RING_BUFFER_REALLOCATION,
+    large_window = c.BROTLI_DECODER_PARAM_LARGE_WINDOW,
+};
+
+// === Decoder Result ===
 
 pub const DecoderResultTag = enum {
     success,
@@ -32,6 +58,8 @@ pub const DecoderResult = union(DecoderResultTag) {
     needs_more_output: void,
     @"error": DecodeError,
 };
+
+// === Error Codes ===
 
 pub const ErrorCode = enum(c_int) {
     no_error = 0,
@@ -110,6 +138,8 @@ pub const ErrorCode = enum(c_int) {
     }
 };
 
+// === Decode Error ===
+
 pub const DecodeError = struct {
     code: ErrorCode,
     message: []const u8,
@@ -122,12 +152,16 @@ pub const DecodeError = struct {
     }
 };
 
+// === Streaming Result ===
+
 pub const StreamResult = struct {
     bytes_consumed: usize,
     bytes_produced: usize,
     has_more_output: bool,
     is_finished: bool,
 };
+
+// === Version ===
 
 pub const Version = struct {
     major: u8,
@@ -143,7 +177,184 @@ pub const Version = struct {
     }
 };
 
+// === Dictionary Type ===
+
+pub const DictionaryType = enum(c_int) {
+    raw = c.BROTLI_SHARED_DICTIONARY_RAW,
+    serialized = c.BROTLI_SHARED_DICTIONARY_SERIALIZED,
+};
+
+// === Encoder Constants ===
+
+pub const MIN_WINDOW_BITS: u5 = c.BROTLI_MIN_WINDOW_BITS;
+pub const MAX_WINDOW_BITS: u5 = c.BROTLI_MAX_WINDOW_BITS;
+pub const LARGE_MAX_WINDOW_BITS: u5 = c.BROTLI_LARGE_MAX_WINDOW_BITS;
+pub const MIN_INPUT_BLOCK_BITS: u5 = c.BROTLI_MIN_INPUT_BLOCK_BITS;
+pub const MAX_INPUT_BLOCK_BITS: u5 = c.BROTLI_MAX_INPUT_BLOCK_BITS;
+pub const MIN_QUALITY: u4 = c.BROTLI_MIN_QUALITY;
+pub const MAX_QUALITY: u4 = c.BROTLI_MAX_QUALITY;
+pub const DEFAULT_QUALITY: u4 = c.BROTLI_DEFAULT_QUALITY;
+pub const DEFAULT_WINDOW: u5 = c.BROTLI_DEFAULT_WINDOW;
+pub const DEFAULT_BASE64_MODE: EncoderBase64Mode = @enumFromInt(c.BROTLI_DEFAULT_BASE64_MODE);
+pub const DEFAULT_MAX_BASE64_REGIONS: u5 = c.BROTLI_DEFAULT_MAX_BASE64_REGIONS;
+
+// === Shared Dictionary Constants ===
+
+pub const SHARED_MIN_DICTIONARY_WORD_LENGTH: u6 = 4;
+pub const SHARED_MAX_DICTIONARY_WORD_LENGTH: u5 = 31;
+pub const SHARED_NUM_DICTIONARY_CONTEXTS: u7 = 64;
+pub const SHARED_MAX_COMPOUND_DICTS: u4 = 15;
+
+// === Error Sets ===
+
 pub const AllocatorError = error{OutOfMemory};
 pub const EncoderError = AllocatorError || error{InvalidParameter};
 pub const DecoderError = AllocatorError || error{DecompressionFailed};
 pub const DictionaryError = AllocatorError || error{InvalidDictionary};
+
+// === Tests ===
+
+test "encoderMode enum values" {
+    try std.testing.expectEqual(@as(c_int, 0), @intFromEnum(EncoderMode.generic));
+    try std.testing.expectEqual(@as(c_int, 1), @intFromEnum(EncoderMode.text));
+    try std.testing.expectEqual(@as(c_int, 2), @intFromEnum(EncoderMode.font));
+}
+
+test "encoderBase64Mode enum values" {
+    try std.testing.expectEqual(@as(c_int, 0), @intFromEnum(EncoderBase64Mode.disabled));
+    try std.testing.expectEqual(@as(c_int, 1), @intFromEnum(EncoderBase64Mode.detection));
+}
+
+test "encoderParameter enum values" {
+    try std.testing.expectEqual(@as(c_int, 0), @intFromEnum(EncoderParameter.mode));
+    try std.testing.expectEqual(@as(c_int, 1), @intFromEnum(EncoderParameter.quality));
+    try std.testing.expectEqual(@as(c_int, 2), @intFromEnum(EncoderParameter.lgwin));
+    try std.testing.expectEqual(@as(c_int, 3), @intFromEnum(EncoderParameter.lgblock));
+    try std.testing.expectEqual(@as(c_int, 4), @intFromEnum(EncoderParameter.disable_literal_context_modeling));
+    try std.testing.expectEqual(@as(c_int, 5), @intFromEnum(EncoderParameter.size_hint));
+    try std.testing.expectEqual(@as(c_int, 6), @intFromEnum(EncoderParameter.large_window));
+    try std.testing.expectEqual(@as(c_int, 7), @intFromEnum(EncoderParameter.npostfix));
+    try std.testing.expectEqual(@as(c_int, 8), @intFromEnum(EncoderParameter.ndirect));
+    try std.testing.expectEqual(@as(c_int, 9), @intFromEnum(EncoderParameter.stream_offset));
+    try std.testing.expectEqual(@as(c_int, 10), @intFromEnum(EncoderParameter.base64_mode));
+    try std.testing.expectEqual(@as(c_int, 11), @intFromEnum(EncoderParameter.max_base64_regions));
+}
+
+test "decoderParameter enum values" {
+    try std.testing.expectEqual(@as(c_int, 0), @intFromEnum(DecoderParameter.disable_ring_buffer_reallocation));
+    try std.testing.expectEqual(@as(c_int, 1), @intFromEnum(DecoderParameter.large_window));
+}
+
+test "encoderOperation enum values" {
+    try std.testing.expectEqual(@as(c_int, 0), @intFromEnum(EncoderOperation.process));
+    try std.testing.expectEqual(@as(c_int, 1), @intFromEnum(EncoderOperation.flush));
+    try std.testing.expectEqual(@as(c_int, 2), @intFromEnum(EncoderOperation.finish));
+    try std.testing.expectEqual(@as(c_int, 3), @intFromEnum(EncoderOperation.emit_metadata));
+}
+
+test "errorCode fromNative" {
+    try std.testing.expectEqual(ErrorCode.no_error, ErrorCode.fromNative(0));
+    try std.testing.expectEqual(ErrorCode.success, ErrorCode.fromNative(1));
+    try std.testing.expectEqual(ErrorCode.needs_more_input, ErrorCode.fromNative(2));
+    try std.testing.expectEqual(ErrorCode.needs_more_output, ErrorCode.fromNative(3));
+    try std.testing.expectEqual(ErrorCode.error_format_exuberant_nibble, ErrorCode.fromNative(-1));
+    try std.testing.expectEqual(ErrorCode.error_format_reserved, ErrorCode.fromNative(-2));
+}
+
+test "errorCode name" {
+    try std.testing.expectEqualStrings("NO_ERROR", ErrorCode.no_error.name());
+    try std.testing.expectEqualStrings("SUCCESS", ErrorCode.success.name());
+    try std.testing.expectEqualStrings("ERROR_UNREACHABLE", ErrorCode.error_unreachable.name());
+    try std.testing.expectEqualStrings("ERROR_FORMAT_DISTANCE", ErrorCode.error_format_distance.name());
+}
+
+test "version fromPacked" {
+    const v = Version.fromPacked((1 << 24) | (2 << 12) | 3);
+    try std.testing.expectEqual(@as(u8, 1), v.major);
+    try std.testing.expectEqual(@as(u8, 2), v.minor);
+    try std.testing.expectEqual(@as(u8, 3), v.patch);
+}
+
+test "version fromPacked zero" {
+    const v = Version.fromPacked(0);
+    try std.testing.expectEqual(@as(u8, 0), v.major);
+    try std.testing.expectEqual(@as(u8, 0), v.minor);
+    try std.testing.expectEqual(@as(u8, 0), v.patch);
+}
+
+test "decoderResultTag union types" {
+    const r1: DecoderResult = .success;
+    switch (r1) {
+        .success => {},
+        else => return error.TestFailed,
+    }
+
+    const r2: DecoderResult = .needs_more_input;
+    switch (r2) {
+        .needs_more_input => {},
+        else => return error.TestFailed,
+    }
+
+    const r3: DecoderResult = .needs_more_output;
+    switch (r3) {
+        .needs_more_output => {},
+        else => return error.TestFailed,
+    }
+}
+
+test "decodeError fromNative with real error" {
+    const handle = c.BrotliDecoderCreateInstance(null, null, null);
+    defer c.BrotliDecoderDestroyInstance(handle);
+    const corrupt = [_]u8{ 0xFF, 0xFF, 0xFF, 0xFF };
+    var available_in: usize = corrupt.len;
+    var next_in: [*c]const u8 = &corrupt;
+    var available_out: usize = 256;
+    var buf: [256]u8 = undefined;
+    var next_out: [*c]u8 = &buf;
+    _ = c.BrotliDecoderDecompressStream(handle, &available_in, &next_in, &available_out, &next_out, null);
+    const err = DecodeError.fromNative(handle);
+    try std.testing.expect(err.code != .no_error);
+    try std.testing.expect(err.message.len > 0);
+}
+
+test "streamResult fields" {
+    const result = StreamResult{
+        .bytes_consumed = 10,
+        .bytes_produced = 20,
+        .has_more_output = true,
+        .is_finished = false,
+    };
+    try std.testing.expectEqual(@as(usize, 10), result.bytes_consumed);
+    try std.testing.expectEqual(@as(usize, 20), result.bytes_produced);
+    try std.testing.expect(result.has_more_output);
+    try std.testing.expect(!result.is_finished);
+}
+
+test "encoder constants values" {
+    try std.testing.expectEqual(@as(u5, 10), MIN_WINDOW_BITS);
+    try std.testing.expectEqual(@as(u5, 24), MAX_WINDOW_BITS);
+    try std.testing.expectEqual(@as(u5, 30), LARGE_MAX_WINDOW_BITS);
+    try std.testing.expectEqual(@as(u5, 16), MIN_INPUT_BLOCK_BITS);
+    try std.testing.expectEqual(@as(u5, 24), MAX_INPUT_BLOCK_BITS);
+    try std.testing.expectEqual(@as(u4, 0), MIN_QUALITY);
+    try std.testing.expectEqual(@as(u4, 11), MAX_QUALITY);
+    try std.testing.expectEqual(@as(u4, 11), DEFAULT_QUALITY);
+    try std.testing.expectEqual(@as(u5, 22), DEFAULT_WINDOW);
+}
+
+test "encoder base64 constants" {
+    try std.testing.expectEqual(EncoderBase64Mode.disabled, DEFAULT_BASE64_MODE);
+    try std.testing.expectEqual(@as(u5, 16), DEFAULT_MAX_BASE64_REGIONS);
+}
+
+test "shared dictionary constants" {
+    try std.testing.expectEqual(@as(u6, 4), SHARED_MIN_DICTIONARY_WORD_LENGTH);
+    try std.testing.expectEqual(@as(u5, 31), SHARED_MAX_DICTIONARY_WORD_LENGTH);
+    try std.testing.expectEqual(@as(u7, 64), SHARED_NUM_DICTIONARY_CONTEXTS);
+    try std.testing.expectEqual(@as(u4, 15), SHARED_MAX_COMPOUND_DICTS);
+}
+
+test "dictionaryType enum values" {
+    try std.testing.expectEqual(@as(c_int, 0), @intFromEnum(DictionaryType.raw));
+    try std.testing.expectEqual(@as(c_int, 1), @intFromEnum(DictionaryType.serialized));
+}
