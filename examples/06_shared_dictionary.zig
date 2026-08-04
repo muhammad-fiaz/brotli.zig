@@ -19,13 +19,22 @@ pub fn main() !void {
     const result = try enc.compressStream(.finish, data, &output);
     const compressed = output[0..result.bytes_produced];
 
-    const decompressed = try brotli.decompress(allocator, compressed);
-    defer allocator.free(decompressed);
+    var dec = try brotli.decoder.Decoder.init(allocator, .{});
+    defer dec.deinit();
+
+    try dec.attachDictionary(.raw, dictionary_data);
+
+    var dec_output: [4096]u8 = undefined;
+    const dec_result = try dec.decompressStream(compressed, &dec_output);
+    switch (dec_result) {
+        .success => {},
+        else => return error.DecompressionFailed,
+    }
 
     std.debug.print("Shared dictionary example:\n", .{});
     std.debug.print("  Dictionary size: {d} bytes\n", .{dictionary_data.len});
     std.debug.print("  Data size: {d} bytes\n", .{data.len});
     std.debug.print("  Compressed: {d} bytes\n", .{compressed.len});
     std.debug.print("  Prepared dictionary attached and used successfully\n", .{});
-    std.debug.print("  Round-trip OK: {}\n", .{std.mem.eql(u8, data, decompressed)});
+    std.debug.print("  Round-trip OK: {}\n", .{std.mem.eql(u8, data, dec_output[0..data.len])});
 }

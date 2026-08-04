@@ -86,11 +86,12 @@ pub const Encoder = struct {
         return ptr[0..len];
     }
 
-    pub fn attachPreparedDictionary(self: Encoder, dict: *const anyopaque) !void {
+    pub fn attachPreparedDictionary(self: Encoder, dict: *const PreparedDictionary) !void {
         if (self.handle == null) return error.InvalidParameter;
-        const dict_ptr: *const c.BrotliEncoderPreparedDictionary = @ptrCast(@alignCast(dict));
-        if (c.BrotliEncoderAttachPreparedDictionary(self.handle, dict_ptr) == c.BROTLI_FALSE)
-            return error.InvalidDictionary;
+        if (dict.handle) |handle| {
+            if (c.BrotliEncoderAttachPreparedDictionary(self.handle, handle) == c.BROTLI_FALSE)
+                return error.InvalidDictionary;
+        }
     }
 
     pub fn estimatePeakMemoryUsage(quality: i32, lgwin: i32, input_size: usize) usize {

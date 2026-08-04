@@ -12,7 +12,6 @@ pub fn main() !void {
     defer dec.deinit();
 
     var output: [4096]u8 = undefined;
-    var total_decompressed: usize = 0;
     var input_offset: usize = 0;
 
     const chunk_size = 8;
@@ -21,23 +20,12 @@ pub fn main() !void {
         const chunk = compressed[input_offset..end];
 
         const result = try dec.decompressStream(chunk, &output);
+        input_offset = end;
+
         switch (result) {
-            .success => {
-                var size: usize = 0;
-                if (dec.takeOutput(&size)) |_| {
-                    total_decompressed += size;
-                }
-                input_offset = end;
-                break;
-            },
-            .needs_more_input => {
-                input_offset = end;
-                continue;
-            },
-            .needs_more_output => {
-                total_decompressed += output.len;
-                continue;
-            },
+            .success => break,
+            .needs_more_input => continue,
+            .needs_more_output => continue,
             .@"error" => |e| {
                 std.debug.print("Decompression error: {s}\n", .{e.message});
                 return error.DecompressionFailed;
@@ -45,5 +33,6 @@ pub fn main() !void {
         }
     }
 
-    std.debug.print("Streaming decode: {d} compressed -> ~{d} decompressed bytes\n", .{ compressed.len, total_decompressed });
+    std.debug.print("Streaming decode: {d} compressed bytes processed\n", .{compressed.len});
+    std.debug.print("Decoder finished: {}\n", .{dec.isFinished()});
 }
