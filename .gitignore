@@ -1,20 +1,28 @@
-# C
-*.d
+# Zig
+.zig-cache/
+.zig-out/
+zig-out/
+zig-cache/
+zig-pkg/
+
+# Build artifacts
 *.o
 *.obj
-bin/
-buildfiles/
-**/obj/
-dist/
-**/bazel-*
-
-# Python
-__pycache__/
-*.py[cod]
+*.a
+*.lib
 *.so
-*.egg-info/
+*.dylib
+*.dll
+*.pdb
+*.exe
 
-# Tests
-*.txt.uncompressed
-*.br
-*.unbr
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

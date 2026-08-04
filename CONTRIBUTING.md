@@ -1,32 +1,62 @@
-Want to contribute? Great! First, read this page (including the small print at
-the end).
+# Contributing to brotli.zig
 
-### Before you contribute
-Before we can use your code, you must sign the
-[Google Individual Contributor License Agreement]
-(https://cla.developers.google.com/about/google-individual)
-(CLA), which you can do online. The CLA is necessary mainly because you own the
-copyright to your changes, even after your contribution becomes part of our
-codebase, so we need your permission to use and distribute your code. We also
-need to be sure of various other things—for instance that you'll tell us if you
-know that your code infringes on other people's patents. You don't have to sign
-the CLA until after you've submitted your code for review and a member has
-approved it, but you must do it before we can put your code into our codebase.
-Before you start working on a larger contribution, you should get in touch with
-us first through the issue tracker with your idea so that we can help out and
-possibly guide you. Coordinating up front makes it much easier to avoid
-frustration later on.
+Thank you for your interest in contributing to brotli.zig!
 
-### Code reviews
-All submissions, including submissions by project members, require review. We
-use Github pull requests for this purpose.
+## Getting Started
 
-### Code style
-Code should follow applicable formatting and style guides described in
-[Google Style Guides](https://google.github.io/styleguide/). C code should be
-C89 compatible.
+1. Fork the repository
+2. Clone your fork
+3. Create a feature branch: `git checkout -b my-feature`
+4. Make your changes
+5. Run tests: `zig build test`
+6. Build examples: `zig build examples`
+7. Commit and push your changes
+8. Open a pull request
 
-### The small print
-Contributions made by corporations are covered by a different agreement than
-the one above, the [Software Grant and Corporate Contributor License Agreement]
-(https://cla.developers.google.com/about/google-corporate).
+## Development
+
+### Prerequisites
+
+- Zig 0.16.0 or later
+
+### Building
+
+```bash
+zig build            # Build library
+zig build test       # Run unit tests
+zig build examples   # Build all examples
+```
+
+### Code Style
+
+- Follow idiomatic Zig conventions
+- Use the existing code style as reference
+- Keep changes minimal and focused
+- Add tests for new functionality
+
+### Project Structure
+
+```
+src/           # Zig binding layer (your contributions go here)
+c/             # Vendored Brotli C source (do not modify)
+examples/      # Example programs
+```
+
+> **Note:** The `c/` directory contains the upstream Brotli C source. Do not modify it directly. Contributions should be made to the Zig binding layer in `src/`.
+
+## Pull Requests
+
+- Keep PRs focused on a single change
+- Include a clear description of what the PR does
+- Ensure all tests pass
+- Add examples if adding new functionality
+
+## Issues
+
+- Search existing issues before opening a new one
+- Include steps to reproduce for bug reports
+- Specify your Zig version and platform
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the MIT License.

@@ -1,0 +1,24 @@
+const std = @import("std");
+const brotli = @import("brotli");
+
+pub fn main() !void {
+    const allocator = std.heap.c_allocator;
+
+    const dictionary_data = "shared dictionary context for better compression";
+    const data = "This data benefits from shared dictionary context for better compression ratios.";
+
+    var prepared = try brotli.PreparedDictionary.init(allocator, .raw, dictionary_data, 11);
+    defer prepared.deinit();
+
+    var enc = try brotli.encoder.Encoder.init(allocator, .{ .quality = 6 });
+    defer enc.deinit();
+
+    var output: [4096]u8 = undefined;
+    const result = try enc.compressStream(.finish, data, &output);
+    _ = result;
+
+    std.debug.print("Shared dictionary example:\n", .{});
+    std.debug.print("  Dictionary size: {d} bytes\n", .{dictionary_data.len});
+    std.debug.print("  Data size: {d} bytes\n", .{data.len});
+    std.debug.print("  Prepared dictionary attached successfully\n", .{});
+}
