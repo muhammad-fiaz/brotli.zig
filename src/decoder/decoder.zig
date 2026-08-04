@@ -37,7 +37,7 @@ pub const Decoder = struct {
             return error.InvalidParameter;
     }
 
-    pub fn decompressStream(self: Decoder, input: []const u8, output: []u8) !types.DecoderResult {
+    pub fn decompressStream(self: Decoder, input: []const u8, output: []u8) !types.StreamResult {
         if (self.handle == null) return error.DecompressionFailed;
 
         var available_in: usize = input.len;
@@ -54,16 +54,34 @@ pub const Decoder = struct {
             null,
         );
 
+        const consumed = input.len - available_in;
+        const produced = output.len - available_out;
+
         return switch (result) {
-            c.BROTLI_DECODER_RESULT_SUCCESS => .success,
-            c.BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT => .needs_more_input,
-            c.BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT => .needs_more_output,
-            c.BROTLI_DECODER_RESULT_ERROR => .{ .@"error" = types.DecodeError.fromNative(self.handle) },
-            else => .{ .@"error" = .{ .code = .error_unreachable, .message = "unknown result" } },
+            c.BROTLI_DECODER_RESULT_SUCCESS => .{
+                .bytes_consumed = consumed,
+                .bytes_produced = produced,
+                .has_more_output = false,
+                .is_finished = true,
+            },
+            c.BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT => .{
+                .bytes_consumed = consumed,
+                .bytes_produced = produced,
+                .has_more_output = c.BrotliDecoderHasMoreOutput(self.handle) != 0,
+                .is_finished = false,
+            },
+            c.BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT => .{
+                .bytes_consumed = consumed,
+                .bytes_produced = produced,
+                .has_more_output = true,
+                .is_finished = false,
+            },
+            c.BROTLI_DECODER_RESULT_ERROR => return error.DecompressionFailed,
+            else => return error.DecompressionFailed,
         };
     }
 
-    pub fn decompressBuffer(self: Decoder, input: []const u8, output: []u8) !types.DecoderResult {
+    pub fn decompressBuffer(self: Decoder, input: []const u8, output: []u8) !types.StreamResult {
         var available_in: usize = input.len;
         var next_in: [*c]const u8 = input.ptr;
         var available_out: usize = output.len;
@@ -78,12 +96,30 @@ pub const Decoder = struct {
             null,
         );
 
+        const consumed = input.len - available_in;
+        const produced = output.len - available_out;
+
         return switch (result) {
-            c.BROTLI_DECODER_RESULT_SUCCESS => .success,
-            c.BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT => .needs_more_input,
-            c.BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT => .needs_more_output,
-            c.BROTLI_DECODER_RESULT_ERROR => .{ .@"error" = types.DecodeError.fromNative(self.handle) },
-            else => .{ .@"error" = .{ .code = .error_unreachable, .message = "unknown result" } },
+            c.BROTLI_DECODER_RESULT_SUCCESS => .{
+                .bytes_consumed = consumed,
+                .bytes_produced = produced,
+                .has_more_output = false,
+                .is_finished = true,
+            },
+            c.BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT => .{
+                .bytes_consumed = consumed,
+                .bytes_produced = produced,
+                .has_more_output = c.BrotliDecoderHasMoreOutput(self.handle) != 0,
+                .is_finished = false,
+            },
+            c.BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT => .{
+                .bytes_consumed = consumed,
+                .bytes_produced = produced,
+                .has_more_output = true,
+                .is_finished = false,
+            },
+            c.BROTLI_DECODER_RESULT_ERROR => return error.DecompressionFailed,
+            else => return error.DecompressionFailed,
         };
     }
 
@@ -173,10 +209,9 @@ test "decoder decompressStream success" {
 
     var output: [256]u8 = undefined;
     const result = try dec.decompressStream(compressed, &output);
-    switch (result) {
-        .success => {},
-        else => return error.TestFailed,
-    }
+    try std.testing.expect(result.is_finished);
+    try std.testing.expect(result.bytes_consumed == compressed.len);
+    try std.testing.expect(result.bytes_produced == original.len);
 }
 
 test "decoder isUsed" {
@@ -240,13 +275,8 @@ test "decoder decompressStream with corrupt data" {
 
     const corrupt = [_]u8{ 0xFF, 0xFF, 0xFF, 0xFF };
     var output: [256]u8 = undefined;
-    const result = try dec.decompressStream(&corrupt, &output);
-    switch (result) {
-        .@"error" => |e| {
-            try std.testing.expect(e.message.len > 0);
-        },
-        else => return error.TestExpectedError,
-    }
+    const result = dec.decompressStream(&corrupt, &output);
+    try std.testing.expectError(error.DecompressionFailed, result);
 }
 
 test "decoder decompressStream needs_more_input" {
@@ -256,10 +286,7 @@ test "decoder decompressStream needs_more_input" {
     const partial = [_]u8{ 0x0B, 0x00, 0x00 };
     var output: [256]u8 = undefined;
     const result = try dec.decompressStream(&partial, &output);
-    switch (result) {
-        .needs_more_input => {},
-        else => {},
-    }
+    try std.testing.expect(!result.is_finished);
 }
 
 test "decoder decompressStream needs_more_output" {
@@ -272,11 +299,8 @@ test "decoder decompressStream needs_more_output" {
 
     var output: [8]u8 = undefined;
     const result = try dec.decompressStream(compressed, &output);
-    switch (result) {
-        .needs_more_output => {},
-        .success => {},
-        else => {},
-    }
+    try std.testing.expect(!result.is_finished);
+    try std.testing.expect(result.has_more_output);
 }
 
 test "decoder roundtrip streaming large data" {
@@ -292,10 +316,8 @@ test "decoder roundtrip streaming large data" {
 
     var dec_output: [2000]u8 = undefined;
     const result = try dec.decompressStream(compressed, &dec_output);
-    switch (result) {
-        .success => {},
-        else => return error.TestFailed,
-    }
+    try std.testing.expect(result.is_finished);
+    try std.testing.expectEqual(original.len, result.bytes_produced);
 }
 
 test "decoder with all options" {
@@ -311,8 +333,63 @@ test "decoder with all options" {
 
     var output: [256]u8 = undefined;
     const result = try dec.decompressStream(compressed, &output);
-    switch (result) {
-        .success => {},
-        else => return error.TestFailed,
+    try std.testing.expect(result.is_finished);
+}
+
+const MetadataContext = struct {
+    var received_size: usize = 0;
+    var received_data: [4096]u8 = undefined;
+    var data_offset: usize = 0;
+
+    pub fn reset() void {
+        received_size = 0;
+        data_offset = 0;
     }
+
+    pub fn startFn(ctx: ?*anyopaque, size: usize) callconv(.c) void {
+        _ = ctx;
+        received_size = size;
+        data_offset = 0;
+    }
+
+    pub fn chunkFn(ctx: ?*anyopaque, data_ptr: [*c]const u8, size: usize) callconv(.c) void {
+        _ = ctx;
+        if (data_ptr) |ptr| {
+            const chunk = ptr[0..size];
+            @memcpy(received_data[data_offset..][0..size], chunk);
+            data_offset += size;
+        }
+    }
+};
+
+test "decoder setMetadataCallbacks with metadata block" {
+    var enc = try @import("../encoder/encoder.zig").Encoder.init(std.testing.allocator, .{ .quality = 6 });
+    defer enc.deinit();
+
+    var output: [4096]u8 = undefined;
+    var total: usize = 0;
+
+    const meta_result = try enc.compressStream(.emit_metadata, "test metadata", output[total..]);
+    total += meta_result.bytes_produced;
+    while (enc.hasMoreOutput()) {
+        const extra = try enc.compressStream(.process, &.{}, output[total..]);
+        total += extra.bytes_produced;
+    }
+    const finish_result = try enc.compressStream(.finish, "real data", output[total..]);
+    total += finish_result.bytes_produced;
+
+    const compressed = output[0..total];
+
+    var dec = try Decoder.init(std.testing.allocator, .{});
+    defer dec.deinit();
+
+    MetadataContext.reset();
+    dec.setMetadataCallbacks(MetadataContext.startFn, MetadataContext.chunkFn, null);
+
+    var dec_output: [256]u8 = undefined;
+    const result = try dec.decompressStream(compressed, &dec_output);
+    try std.testing.expect(result.is_finished);
+    try std.testing.expectEqual(@as(usize, 13), MetadataContext.received_size);
+    try std.testing.expectEqualStrings("test metadata", MetadataContext.received_data[0..MetadataContext.received_size]);
+    try std.testing.expectEqualStrings("real data", dec_output[0..result.bytes_produced]);
 }

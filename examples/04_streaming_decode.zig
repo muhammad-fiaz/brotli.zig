@@ -20,19 +20,12 @@ pub fn main() !void {
         const chunk = compressed[input_offset..end];
 
         const result = try dec.decompressStream(chunk, &output);
-        input_offset = end;
+        input_offset += result.bytes_consumed;
 
-        switch (result) {
-            .success => break,
-            .needs_more_input => continue,
-            .needs_more_output => continue,
-            .@"error" => |e| {
-                std.debug.print("Decompression error: {s}\n", .{e.message});
-                return error.DecompressionFailed;
-            },
-        }
+        if (result.is_finished) break;
+        if (!result.has_more_output and result.bytes_consumed == 0 and result.bytes_produced == 0) break;
     }
 
-    std.debug.print("Streaming decode: {d} compressed bytes processed\n", .{compressed.len});
+    std.debug.print("Streaming decode: {d} compressed bytes processed\n", .{input_offset});
     std.debug.print("Decoder finished: {}\n", .{dec.isFinished()});
 }

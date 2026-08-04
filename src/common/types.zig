@@ -43,22 +43,6 @@ pub const DecoderParameter = enum(c_int) {
     large_window = c.BROTLI_DECODER_PARAM_LARGE_WINDOW,
 };
 
-// === Decoder Result ===
-
-pub const DecoderResultTag = enum {
-    success,
-    needs_more_input,
-    needs_more_output,
-    @"error",
-};
-
-pub const DecoderResult = union(DecoderResultTag) {
-    success: void,
-    needs_more_input: void,
-    needs_more_output: void,
-    @"error": DecodeError,
-};
-
 // === Error Codes ===
 
 pub const ErrorCode = enum(c_int) {
@@ -197,6 +181,7 @@ pub const DEFAULT_QUALITY: u4 = c.BROTLI_DEFAULT_QUALITY;
 pub const DEFAULT_WINDOW: u5 = c.BROTLI_DEFAULT_WINDOW;
 pub const DEFAULT_BASE64_MODE: EncoderBase64Mode = @enumFromInt(c.BROTLI_DEFAULT_BASE64_MODE);
 pub const DEFAULT_MAX_BASE64_REGIONS: u5 = c.BROTLI_DEFAULT_MAX_BASE64_REGIONS;
+pub const DEFAULT_MODE: EncoderMode = .generic;
 
 // === Shared Dictionary Constants ===
 
@@ -204,6 +189,7 @@ pub const SHARED_MIN_DICTIONARY_WORD_LENGTH: u6 = 4;
 pub const SHARED_MAX_DICTIONARY_WORD_LENGTH: u5 = 31;
 pub const SHARED_NUM_DICTIONARY_CONTEXTS: u7 = 64;
 pub const SHARED_MAX_COMPOUND_DICTS: u4 = 15;
+pub const SHARED_MAX_RAW_DICT_SIZE: usize = 1 << 27;
 
 // === Error Sets ===
 
@@ -280,26 +266,6 @@ test "version fromPacked zero" {
     try std.testing.expectEqual(@as(u8, 0), v.major);
     try std.testing.expectEqual(@as(u8, 0), v.minor);
     try std.testing.expectEqual(@as(u8, 0), v.patch);
-}
-
-test "decoderResultTag union types" {
-    const r1: DecoderResult = .success;
-    switch (r1) {
-        .success => {},
-        else => return error.TestFailed,
-    }
-
-    const r2: DecoderResult = .needs_more_input;
-    switch (r2) {
-        .needs_more_input => {},
-        else => return error.TestFailed,
-    }
-
-    const r3: DecoderResult = .needs_more_output;
-    switch (r3) {
-        .needs_more_output => {},
-        else => return error.TestFailed,
-    }
 }
 
 test "decodeError fromNative with real error" {

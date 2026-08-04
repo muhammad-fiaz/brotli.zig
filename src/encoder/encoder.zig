@@ -331,8 +331,5 @@ test "encoder roundtrip streaming" {
 
     var dec_output: [256]u8 = undefined;
     const dec_result = try dec.decompressStream(compressed, &dec_output);
-    switch (dec_result) {
-        .success => {},
-        else => return error.TestFailed,
-    }
+    try std.testing.expect(dec_result.is_finished);
 }

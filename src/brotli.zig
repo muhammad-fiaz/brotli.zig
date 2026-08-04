@@ -34,8 +34,6 @@ pub const EncoderOptions = encoder.EncoderOptions;
 
 // Decoder enums
 pub const DecoderParameter = common.types.DecoderParameter;
-pub const DecoderResult = common.types.DecoderResult;
-pub const DecoderResultTag = common.types.DecoderResultTag;
 pub const DecoderOptions = decoder.DecoderOptions;
 
 // Error types
@@ -62,12 +60,14 @@ pub const DEFAULT_QUALITY = common.types.DEFAULT_QUALITY;
 pub const DEFAULT_WINDOW = common.types.DEFAULT_WINDOW;
 pub const DEFAULT_BASE64_MODE = common.types.DEFAULT_BASE64_MODE;
 pub const DEFAULT_MAX_BASE64_REGIONS = common.types.DEFAULT_MAX_BASE64_REGIONS;
+pub const DEFAULT_MODE = common.types.DEFAULT_MODE;
 
 // Shared dictionary constants
 pub const SHARED_MIN_DICTIONARY_WORD_LENGTH = common.types.SHARED_MIN_DICTIONARY_WORD_LENGTH;
 pub const SHARED_MAX_DICTIONARY_WORD_LENGTH = common.types.SHARED_MAX_DICTIONARY_WORD_LENGTH;
 pub const SHARED_NUM_DICTIONARY_CONTEXTS = common.types.SHARED_NUM_DICTIONARY_CONTEXTS;
 pub const SHARED_MAX_COMPOUND_DICTS = common.types.SHARED_MAX_COMPOUND_DICTS;
+pub const SHARED_MAX_RAW_DICT_SIZE = common.types.SHARED_MAX_RAW_DICT_SIZE;
 
 // Convenience functions
 pub fn version() Version {
@@ -88,6 +88,10 @@ pub fn decompress(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 
 pub fn decompressWithOptions(allocator: std.mem.Allocator, input: []const u8, options: decoder.DecoderOptions) ![]u8 {
     return decoder.oneshot.decompressWith(allocator, input, options);
+}
+
+pub fn decompressSimple(encoded: []const u8, decoded: []u8) !struct { success: bool, decoded_size: usize } {
+    return decoder.oneshot.decompressSimple(encoded, decoded);
 }
 
 test {

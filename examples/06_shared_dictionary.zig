@@ -26,10 +26,7 @@ pub fn main() !void {
 
     var dec_output: [4096]u8 = undefined;
     const dec_result = try dec.decompressStream(compressed, &dec_output);
-    switch (dec_result) {
-        .success => {},
-        else => return error.DecompressionFailed,
-    }
+    if (!dec_result.is_finished) return error.DecompressionFailed;
 
     std.debug.print("Shared dictionary example:\n", .{});
     std.debug.print("  Dictionary size: {d} bytes\n", .{dictionary_data.len});

@@ -3,6 +3,20 @@ const c = @import("../c.zig").c;
 const types = @import("../common/types.zig");
 const options_mod = @import("options.zig");
 
+pub fn decompressSimple(encoded: []const u8, decoded: []u8) !struct { success: bool, decoded_size: usize } {
+    var decoded_size: usize = decoded.len;
+    const result = c.BrotliDecoderDecompress(
+        encoded.len,
+        encoded.ptr,
+        &decoded_size,
+        decoded.ptr,
+    );
+    return .{
+        .success = result == c.BROTLI_DECODER_RESULT_SUCCESS,
+        .decoded_size = decoded_size,
+    };
+}
+
 pub fn decompress(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return decompressWith(allocator, input, .{});
 }
@@ -201,6 +215,27 @@ test "oneshot decompressWithOptions with disable_ring_buffer_reallocation" {
     });
     defer std.testing.allocator.free(decompressed);
     try std.testing.expectEqualStrings(original, decompressed);
+}
+
+test "oneshot decompressSimple basic" {
+    const original = "Simple decompression test";
+    const compressed = try @import("../encoder/oneshot.zig").compress(std.testing.allocator, original, .{});
+    defer std.testing.allocator.free(compressed);
+
+    var output: [256]u8 = undefined;
+    const result = try decompressSimple(compressed, &output);
+    try std.testing.expect(result.success);
+    try std.testing.expectEqualStrings(original, output[0..result.decoded_size]);
+}
+
+test "oneshot decompressSimple buffer too small" {
+    const original = "This is a longer test string that requires more than 10 bytes of output buffer space";
+    const compressed = try @import("../encoder/oneshot.zig").compress(std.testing.allocator, original, .{});
+    defer std.testing.allocator.free(compressed);
+
+    var output: [10]u8 = undefined;
+    const result = try decompressSimple(compressed, &output);
+    try std.testing.expect(!result.success);
 }
 
 test "oneshot decompress large window roundtrip" {
