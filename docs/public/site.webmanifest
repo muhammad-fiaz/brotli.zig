@@ -1,0 +1,16 @@
+{
+  "name": "brotli.zig",
+  "short_name": "brotli.zig",
+  "description": "Native Zig compression library",
+  "start_url": "/brotli.zig/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#F7C948",
+  "icons": [
+    {
+      "src": "/brotli.zig/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

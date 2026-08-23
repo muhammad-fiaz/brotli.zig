@@ -2,15 +2,25 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main, dev]
   pull_request:
-    branches: [master]
+    branches: [main, dev]
 
 jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Check formatting
+        run: zig fmt --check src/ examples/
+
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
@@ -19,29 +29,56 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
-      - run: zig build test
+      - run: zig build test --summary all
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - run: zig build fuzz
 
   examples:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         example:
-          - 01_quick_compress
-          - 02_custom_quality
-          - 03_streaming_encode
-          - 04_streaming_decode
-          - 05_custom_allocator
-          - 06_shared_dictionary
-          - 07_large_window
-          - 08_error_handling
+          - compress_file
+          - streaming_compression
+          - decompress_file
+          - streaming_decompression
+          - dictionary_compression
+          - reusable_context
+          - error_handling
+          - format_introspection
+          - bit_level
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
-      - run: zig build
-      - run: zig-out/bin/${{ matrix.example }}
+      - run: zig build run-${{ matrix.example }}
+
+  cross-target:
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-linux
+          - x86_64-windows
+          - aarch64-macos
+          - x86-windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - run: zig build -Dtarget=${{ matrix.target }}

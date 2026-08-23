@@ -4,152 +4,82 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const portable = b.option(bool, "portable", "Build with BROTLI_BUILD_PORTABLE=1") orelse false;
-    const shared = b.option(bool, "shared", "Build Brotli as a shared library instead of static") orelse false;
-
     const brotli_mod = b.addModule("brotli", .{
         .root_source_file = b.path("src/brotli.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = false,
     });
 
-    const c_lib = buildBrotliC(b, target, optimize, portable, shared);
-    brotli_mod.linkLibrary(c_lib);
-    brotli_mod.addIncludePath(b.path("c/include"));
-    brotli_mod.addIncludePath(b.path("c"));
-
-    b.installArtifact(c_lib);
-
-    addTests(b, target, optimize, brotli_mod);
-    addExamples(b, target, optimize, brotli_mod);
-}
-
-fn buildBrotliC(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    portable: bool,
-    shared: bool,
-) *std.Build.Step.Compile {
-    const linkage: std.builtin.LinkMode = if (shared) .dynamic else .static;
-
-    const c_root_mod = b.createModule(.{
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
-
-    const c_lib = b.addLibrary(.{
+    const lib = b.addLibrary(.{
         .name = "brotli",
-        .root_module = c_root_mod,
-        .linkage = linkage,
-    });
-
-    const flags: []const []const u8 = if (portable)
-        &.{ "-DBROTLI_STATIC_COMPILATION", "-DBROTLI_BUILD_PORTABLE=1" }
-    else
-        &.{"-DBROTLI_STATIC_COMPILATION"};
-
-    c_root_mod.addCSourceFiles(.{
-        .root = b.path("c"),
-        .files = &.{
-            "common/dictionary.c",
-            "common/context.c",
-            "common/shared_dictionary.c",
-            "common/transform.c",
-            "common/platform.c",
-            "common/constants.c",
-            "dec/bit_reader.c",
-            "dec/decode.c",
-            "dec/huffman.c",
-            "dec/prefix.c",
-            "dec/state.c",
-            "dec/static_init.c",
-            "enc/backward_references.c",
-            "enc/backward_references_hq.c",
-            "enc/bit_cost.c",
-            "enc/block_splitter.c",
-            "enc/brotli_bit_stream.c",
-            "enc/cluster.c",
-            "enc/command.c",
-            "enc/compound_dictionary.c",
-            "enc/compress_fragment.c",
-            "enc/compress_fragment_two_pass.c",
-            "enc/dictionary_hash.c",
-            "enc/encode.c",
-            "enc/encoder_dict.c",
-            "enc/entropy_encode.c",
-            "enc/fast_log.c",
-            "enc/histogram.c",
-            "enc/literal_cost.c",
-            "enc/memory.c",
-            "enc/metablock.c",
-            "enc/static_dict.c",
-            "enc/static_dict_lut.c",
-            "enc/utf8_util.c",
-            "enc/static_init.c",
-        },
-        .flags = flags,
-    });
-
-    c_root_mod.addIncludePath(b.path("c/include"));
-    c_root_mod.addIncludePath(b.path("c"));
-
-    return c_lib;
-}
-
-fn addTests(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    brotli_mod: *std.Build.Module,
-) void {
-    _ = target;
-    _ = optimize;
-    const test_step = b.step("test", "Run all tests");
-
-    const unit_tests = b.addTest(.{
         .root_module = brotli_mod,
     });
-    const run_unit_tests = b.addRunArtifact(unit_tests);
-    test_step.dependOn(&run_unit_tests.step);
-}
+    b.installArtifact(lib);
 
-fn addExamples(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    brotli_mod: *std.Build.Module,
-) void {
-    const examples_step = b.step("examples", "Build and install all examples");
+    // `zig build test` runs library tests only.
+    const test_step = b.step("test", "Run all tests");
+    const tests = b.addTest(.{ .root_module = brotli_mod });
+    const run_tests = b.addRunArtifact(tests);
+    test_step.dependOn(&run_tests.step);
 
-    const example_files = [_][]const u8{
-        "01_quick_compress",
-        "02_custom_quality",
-        "03_streaming_encode",
-        "04_streaming_decode",
-        "05_custom_allocator",
-        "06_shared_dictionary",
-        "07_large_window",
-        "08_error_handling",
-        "09_metadata",
-        "10_base64_mode",
+    const fuzz_mod = b.createModule(.{
+        .root_source_file = b.path("src/fuzz/decode_fuzzer.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "brotli", .module = brotli_mod },
+        },
+    });
+    const fuzz_tests = b.addTest(.{ .root_module = fuzz_mod });
+    const run_fuzz = b.addRunArtifact(fuzz_tests);
+    const fuzz_step = b.step("fuzz", "Run the decoder robustness fuzzer");
+    fuzz_step.dependOn(&run_fuzz.step);
+
+    const docs_step = b.step("docs", "Generate documentation");
+    const docs = b.addTest(.{ .root_module = brotli_mod });
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    docs_step.dependOn(&install_docs.step);
+
+    const examples = [_]struct { name: []const u8, file: []const u8 }{
+        .{ .name = "decompress_file", .file = "examples/decompress_file.zig" },
+        .{ .name = "streaming_decompression", .file = "examples/streaming_decompression.zig" },
+        .{ .name = "compress_file", .file = "examples/compress_file.zig" },
+        .{ .name = "streaming_compression", .file = "examples/streaming_compression.zig" },
+        .{ .name = "dictionary_compression", .file = "examples/dictionary_compression.zig" },
+        .{ .name = "error_handling", .file = "examples/error_handling.zig" },
+        .{ .name = "reusable_context", .file = "examples/reusable_context.zig" },
+        .{ .name = "format_introspection", .file = "examples/format_introspection.zig" },
+        .{ .name = "bit_level", .file = "examples/bit_level.zig" },
     };
 
-    inline for (example_files) |name| {
-        const exe_mod = b.createModule(.{
-            .root_source_file = b.path(b.fmt("examples/{s}.zig", .{name})),
-            .target = target,
-            .optimize = optimize,
-        });
-        exe_mod.addImport("brotli", brotli_mod);
+    const run_all = b.step("run-all-examples", "Run all examples");
+
+    inline for (examples) |example| {
+        const run_step = b.step(
+            "run-" ++ example.name,
+            "Run " ++ example.name ++ " example",
+        );
 
         const exe = b.addExecutable(.{
-            .name = name,
-            .root_module = exe_mod,
+            .name = "example-" ++ example.name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(example.file),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{
+                    .{ .name = "brotli", .module = brotli_mod },
+                },
+            }),
         });
-        const install_exe = b.addInstallArtifact(exe, .{});
-        b.getInstallStep().dependOn(&install_exe.step);
-        examples_step.dependOn(&install_exe.step);
+
+        const run_exe = b.addRunArtifact(exe);
+        run_step.dependOn(&run_exe.step);
+        run_all.dependOn(&run_exe.step);
+        run_exe.step.dependOn(&lib.step);
     }
 }
