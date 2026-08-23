@@ -28,6 +28,12 @@
 > [!TIP]
 > If you build with brotli.zig, make sure to give it a star.
 
+> [!IMPORTANT]
+> **Version 0.0.1 used C bindings** as a wrapper around the reference Brotli C library.
+> It is deprecated and should not be used in new projects. Starting with **v0.0.2**,
+> `brotli.zig` is a fully native Zig implementation — no C code, no libc, no external
+> dependencies. All compression and decompression runs entirely in Zig.
+
 > [!NOTE]
 > This implementation is based on **Brotli v1.2.0** as the format specification (RFC 7932), re-designed with Zig idioms and implemented natively.
 >
