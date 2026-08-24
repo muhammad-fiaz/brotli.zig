@@ -30,7 +30,7 @@
 
 > [!IMPORTANT]
 > **Version 0.0.1 used C bindings** as a wrapper around the reference Brotli C library.
-> It is deprecated and should not be used in new projects. Starting with **v0.0.2**,
+> It is deprecated and should not be used in new projects. Starting with **v0.0.3**,
 > `brotli.zig` is a fully native Zig implementation — no C code, no libc, no external
 > dependencies. All compression and decompression runs entirely in Zig.
 
@@ -40,11 +40,11 @@
 > **Pure Zig — zero C dependencies:** Unlike binding-based approaches, `brotli.zig` implements the Brotli format directly in Zig, including:
 > - **Streaming decoder state machine** — window bits (incl. large window), metablock headers, metadata blocks, uncompressed metablocks, partial input/output resumption
 > - **Huffman decoding** — code-length tables, two-level explicit tables, simple/tree-select tables
-> - **Context modeling** — the full 2048-entry literal context lookup table
+> - **Context modeling** — the full 2048-entry literal context lookup table; the encoder emits second-order context-modeled literals with clustered context maps
 > - **LZ77 back-references** with distance ring-buffer shortcuts
-> - **Static dictionary** — the complete 122,784-byte RFC 7932 word list with all 121 word transforms
+> - **Static dictionary** — the complete 122,784-byte RFC 7932 word list; the encoder emits dictionary word references (including uppercase transforms) and both sides accept custom raw dictionaries
 > - **Custom dictionaries** — attach shared raw bytes to encoder and decoder for small-payload compression
-> - **Native encoder** — hash-chain match finder, Huffman table construction, metablock emission, quality levels 0–11
+> - **Native encoder** — hash-chain match finder, Huffman table construction, metablock emission, quality levels 0–11, literal block switching, second-order context modeling with clustered context maps, NPOSTFIX/NDIRECT distance coding, large-window streams up to LGWIN 30, and metadata metablocks
 > - **Progress callbacks** — observe streaming compression progress for large files
 > - **Parameter API** — all nine `PARAM_*` encoder knobs mirroring the C enumeration
 
@@ -64,8 +64,10 @@
 | **Streaming Decompression** | `StreamingDecompressor` chunked processing with `feed`/`take` |
 | **Dictionary Compression** | `attachDictionary()` on both encoder and decoder |
 | **Built-in Static Dictionary** | Complete RFC 7932 122,784-byte word list + 121 transforms, zero config |
-| **Window Sizes** | LGWIN 10–24 standard; large-window decode up to 30 |
+| **Window Sizes** | LGWIN 10â€“24 standard; large-window decode up to 30 |
 | **Modes** | Generic, text, and font analysis hints |
+| **Large Window** | Optional LGWIN up to 30 encode/decode (incompatible extension) |
+| **Metadata Blocks** | Emit side-channel metadata via `emitMetadata()` / `.emit_metadata` |
 | **Parameter API** | All nine `PARAM_*` identifiers mirroring `BrotliEncoderSetParameter` |
 | **Progress Callbacks** | Optional observer during streaming compression |
 | **Preallocated Output** | `decompressInto()` and `maxCompressedSize()` for buffer control |
@@ -127,10 +129,10 @@ zig build -Dtarget=x86-windows
 
 ### Method 1: Zig Fetch (Recommended)
 
-**Latest Release (v0.0.2)**
+**Latest Release (v0.0.3)**
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.2.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz
 ```
 
 ### Method 2: Zig Fetch (Main Branch)
@@ -144,7 +146,7 @@ zig fetch --save git+https://github.com/muhammad-fiaz/brotli.zig.git
 ```zig
 .dependencies = .{
     .brotli = .{
-        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.2.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz",
         .hash = "...", // Run `zig fetch --save <url>` to generate the hash.
     },
 },
@@ -274,6 +276,7 @@ defer allocator.free(tiny); // only decodable with the same dict attached
 ```
 
 The built-in RFC 7932 static dictionary works automatically on both sides.
+
 
 ## API Reference
 

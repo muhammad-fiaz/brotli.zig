@@ -5,7 +5,7 @@ description: Mode enum and numeric quality levels for the Brotli encoder.
 
 # Strategy & Quality Levels
 
-There is no `CLevel` enum — quality levels are plain `u32`.
+There is no `CLevel` enum â€” quality levels are plain `u32`.
 
 ## Levels
 
@@ -16,8 +16,8 @@ pub const MIN_QUALITY: u32 = 0;
 pub const MAX_QUALITY: u32 = 11;
 pub const DEFAULT_QUALITY: u32 = 11;
 
-pub fn versionString() []const u8 // "0.0.2"
-pub fn versionNumber() u32        // 2
+pub fn versionString() []const u8 // "0.0.3"
+pub fn versionNumber() u32        // 3
 ```
 
 Use with `brotli.compressWithOptions` or `StreamingCompressor`:
@@ -38,7 +38,7 @@ Quality trade-off (measured on pseudo-text, 512 KiB):
 
 | Quality | Ratio | Character |
 |---------|-------|-----------|
-| 0–1 | ~21% | Fastest; greedy matching |
+| 0â€“1 | ~21% | Fastest; greedy matching |
 | 5 | ~18.5% | Balanced; lazy matching |
 | 9 | ~17.5% | Deep hash-chain search |
 | 11 | ~18% | Best analysis (context modeling heuristics) |

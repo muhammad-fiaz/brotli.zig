@@ -5,15 +5,29 @@
 //! ring-buffer semantics exactly.
 
 const std = @import("std");
+const static_dict = @import("static_dict.zig");
 
 pub const MIN_MATCH = 4;
 pub const MAX_MATCH = 16779;
 
+/// A resolved built-in dictionary reference attached to a command.
+pub const DictRef = struct {
+    /// Base word length carried in the stream copy-length field.
+    len_code: u32,
+    /// Word index within its length class.
+    word_idx: u16,
+    /// RFC transform index into the shared transform table.
+    transform_idx: u16,
+};
+
 pub const Command = struct {
     insert_len: u32,
     copy_len: u32,
-    /// Absolute distance (1 = previous byte).
+    /// Absolute distance (1 = previous byte); zero for dict-only commands
+    /// until assigned during planning.
     dist: u32 = 0,
+    /// Present when this command copies from the built-in dictionary.
+    dict: ?DictRef = null,
 };
 
 /// Recent-distance cache mirroring the decoder state.
@@ -102,7 +116,9 @@ fn insertHash(head: []i64, prev: []i64, buf: []const u8, pos: usize) void {
 }
 
 /// Runs the matcher over `buf[start..]`, appending commands to `out`.
-/// Trailing literals form a final copy-less command.
+/// Trailing literals form a final copy-less command. When `lut` is provided,
+/// positions may resolve into the built-in dictionary when that beats the
+/// best in-window match.
 pub fn compress(
     allocator: std.mem.Allocator,
     buf: []const u8,
@@ -111,6 +127,7 @@ pub fn compress(
     max_dist: usize,
     params: Params,
     out: *std.ArrayList(Command),
+    lut: ?*const static_dict.Lut,
 ) !void {
     const head = try allocator.alloc(i64, HASH_SIZE);
     @memset(head, -1);
@@ -135,6 +152,37 @@ pub fn compress(
         if (pos + params.min_match > end) break;
 
         const m = findMatch(buf, pos, max_dist, head, prev, params, params.min_match - 1);
+
+        // Built-in dictionary candidate. A reference pays a large distance
+        // code, so it only makes sense against a literal run: any real
+        // in-window match encodes more cheaply than the longest dictionary
+        // word could.
+        if (lut) |l| {
+            if (m == null) {
+                if (static_dict.findBest(l, buf[pos..], params.min_match, @min(end - pos, MAX_MATCH))) |cand| {
+                    if (cand.len >= 5) {
+                        const stop = pos + cand.len;
+                        var ip = pos;
+                        while (ip < stop) : (ip += 1) {
+                            if (ip + params.min_match <= end) insertHash(head, prev, buf, ip);
+                        }
+                        try out.append(allocator, .{
+                            .insert_len = @intCast(pos - lit_start),
+                            .copy_len = @intCast(cand.len),
+                            .dist = 0,
+                            .dict = .{
+                                .len_code = @intCast(cand.len_code),
+                                .word_idx = cand.word_idx,
+                                .transform_idx = cand.transform_idx,
+                            },
+                        });
+                        pos = stop;
+                        lit_start = stop;
+                        continue;
+                    }
+                }
+            }
+        }
 
         if (params.lazy and m != null) {
             // One-step lazy evaluation: prefer a longer match that starts

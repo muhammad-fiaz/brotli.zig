@@ -6,14 +6,14 @@ description: Version accessors, limits, and format constants exposed by brotli.z
 # Format Introspection & Constants
 
 Brotli streams carry no per-frame header metadata like other formats; introspection is
-limited to version info, bounds and format constants — all available without
+limited to version info, bounds and format constants â€” all available without
 touching compressed data.
 
 ## Version
 
 ```zig
-pub const version = "0.0.2";
-pub const version_number: u32 = 2;      // 0*100*100 + 0*100 + 2
+pub const version = "0.0.3";
+pub const version_number: u32 = 3;      // 0*100*100 + 0*100 + 2
 pub const spec_version = "1.2.0";       // implemented RFC 7932 spec level
 pub const spec_version_number: u32 = 10200;
 
@@ -63,3 +63,20 @@ if (dec.hasError()) {
 
 Every `ErrorCode` has a stable `.name()` string mirroring the C
 `BrotliDecoderErrorStr` values.
+
+## Distance Parameters
+
+```zig
+pub const MAX_NPOSTFIX: u32 = 3;
+pub const MAX_NDIRECT: u32 = 120;
+pub fn distanceAlphabetSize(npostfix: u32, ndirect: u32, max_nbits: u32) u32
+```
+
+## Large Window
+
+```zig
+pub const LARGE_MIN_WBITS: u32 = 10;
+pub const LARGE_MAX_WBITS: u32 = 30;
+pub const LARGE_MAX_DISTANCE_BITS: u32 = 62;
+pub const MAX_ALLOWED_DISTANCE: u32 = 0x7FFFFFFC;
+```

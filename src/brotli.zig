@@ -1,5 +1,5 @@
 //! Native Zig implementation of the Brotli compressed-data format
-//! (RFC 7932 / Large Window Brotli) — public API.
+//! (RFC 7932 / Large Window Brotli) â€” public API.
 //!
 //! This is a from-scratch implementation: no C bindings, no libc, no
 //! external dependencies.
@@ -15,8 +15,8 @@
 const std = @import("std");
 
 /// Brotli codec specification version implemented (matches common/version.h).
-pub const version = "0.0.2";
-pub const version_number: u32 = 0 * 100 * 100 + 0 * 100 + 2;
+pub const version = "0.0.3";
+pub const version_number: u32 = 0 * 100 * 100 + 0 * 100 + 3;
 
 /// Data-format specification implemented (Brotli v1.2.0).
 pub const spec_version = "1.2.0";
@@ -90,39 +90,76 @@ pub const BrotliErrorInfo = struct {
 ///         ...
 ///     }
 pub const StreamingDecompressor = struct {
-    /// Next unconsumed input chunk.
-    pending: ?[]const u8 = null,
     inner: Decoder,
+    allocator: std.mem.Allocator,
+    /// Accumulates all fed bytes; handed to the decoder as one contiguous
+    /// block per `take` call so sub-byte reader state never crosses calls.
+    inbuf: std.ArrayList(u8),
+    /// Offset of next unconsumed byte in inbuf.
+    fed_pos: usize = 0,
     finished_: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, options: DecoderOptions) StreamingDecompressor {
-        return .{ .inner = Decoder.init(allocator, options) };
+        return .{
+            .inner = Decoder.init(allocator, options),
+            .allocator = allocator,
+            .inbuf = .empty,
+        };
     }
 
     pub fn deinit(self: *StreamingDecompressor) void {
+        self.inbuf.deinit(self.allocator);
         self.inner.deinit();
     }
 
-    /// Presents the next chunk of compressed input. Input is referenced
-    /// until the next `feed`/`take` cycle completes the chunk.
     pub fn feed(self: *StreamingDecompressor, chunk: []const u8) void {
-        self.pending = chunk;
+        self.inbuf.appendSlice(self.allocator, chunk) catch {};
     }
 
-    /// Decodes as much as possible into `out`; returns bytes written.
+    /// Signals no more input will arrive; flushes any remaining partial data.
+    pub fn endInput(self: *StreamingDecompressor) void {
+        var empty: []const u8 = &.{};
+        var avail: []u8 = &.{};
+        _ = self.inner.decompressStream(&empty, &avail, null);
+    }
+
+    /// Decodes into `out`; returns bytes written during THIS call.
+    /// Callers should keep calling until both `isFinished()` and zero output.
     pub fn take(self: *StreamingDecompressor, out: []u8) !usize {
-        var input: []const u8 = self.pending orelse &.{};
         var avail: []u8 = out;
-        var total: u64 = 0;
-        const r = self.inner.decompressStream(&input, &avail, &total);
-        self.pending = if (input.len != 0) input else null;
-        switch (r) {
-            .success => self.finished_ = true,
-            .needs_more_input => {},
-            .needs_more_output => {},
-            .err => return error.BrotliStreamError,
+        const total_before = self.inner.partial_pos_out;
+
+        // Feed ALL remaining buffered input as one contiguous block.
+        var unconsumed: []const u8 = self.inbuf.items[self.fed_pos..];
+        if (unconsumed.len > 0) {
+            const r = self.inner.decompressStream(&unconsumed, &avail, &self.inner.partial_pos_out);
+            self.fed_pos = self.inbuf.items.len - unconsumed.len;
+            switch (r) {
+                .success => self.finished_ = true,
+                .needs_more_input, .needs_more_output => {},
+                .err => return error.BrotliStreamError,
+            }
+            // Compact consumed prefix.
+            if (self.fed_pos > 0) {
+                const rem = self.inbuf.items.len - self.fed_pos;
+                std.mem.copyForwards(u8, self.inbuf.items[0..rem], self.inbuf.items[self.fed_pos..]);
+                self.inbuf.shrinkRetainingCapacity(rem);
+                self.fed_pos = 0;
+            }
         }
-        return out.len - avail.len;
+
+        // Signal end-of-stream once all input has been absorbed.
+        if (!self.finished_) {
+            var empty: []const u8 = &.{};
+            const r2 = self.inner.decompressStream(&empty, &avail, &self.inner.partial_pos_out);
+            switch (r2) {
+                .success => self.finished_ = true,
+                .needs_more_input, .needs_more_output => {},
+                .err => return error.BrotliStreamError,
+            }
+        }
+
+        return @intCast(self.inner.partial_pos_out - total_before);
     }
 
     pub fn isFinished(self: *const StreamingDecompressor) bool {
@@ -251,6 +288,17 @@ pub const StreamingCompressor = struct {
         return self.drain();
     }
 
+    /// Emits a metadata metablock (RFC 7932 section 9.2) carrying `payload`.
+    /// Metadata is skipped by decoders that do not observe it and is never
+    /// part of the decompressed output.
+    pub fn emitMetadata(self: *StreamingCompressor, payload: []const u8) ![]u8 {
+        self.inner.compressStream(.emit_metadata, payload) catch |e| {
+            self.err = e;
+            return e;
+        };
+        return self.drain();
+    }
+
     /// Finishes the stream; the returned bytes end with the final block.
     pub fn finish(self: *StreamingCompressor) ![]u8 {
         if (!self.inner.isFinished()) {
@@ -309,9 +357,11 @@ pub fn compressWithOptions(
 /// BrotliEncoderMaxCompressedSize).
 pub fn maxCompressedSize(input_size: usize) usize {
     if (input_size == 0) return 2;
+    // Wrapping arithmetic keeps this correct (and non-panicking) on targets
+    // where usize is narrower than the largest supported stream.
     const num_large_blocks = input_size >> 14;
     const overhead = 2 + 4 * num_large_blocks + 4;
-    const result = input_size + overhead;
+    const result = input_size +% overhead;
     if (result < input_size) return 0;
     return result;
 }
@@ -358,7 +408,7 @@ const testing = std.testing;
 
 test "version accessors" {
     try testing.expectEqualStrings(version, versionString());
-    try testing.expectEqual(@as(u32, 2), versionNumber());
+    try testing.expectEqual(@as(u32, 3), versionNumber());
 }
 
 test "streaming decompressor on empty finalized stream" {
@@ -651,4 +701,242 @@ test "streaming compressor attachDictionary passthrough" {
     var total: u64 = 0;
     try testing.expectEqual(DecodeResult.success, d.decompressStream(&in, &avail, &total));
     try testing.expectEqualStrings(input, out[0..@intCast(total)]);
+}
+
+test "large window round trip up to 30 bits" {
+    const allocator = testing.allocator;
+
+    inline for (.{ 25, 28, 30 }) |w| {
+        var input: [40000]u8 = undefined;
+        var prng = std.Random.DefaultPrng.init(@intCast(w));
+        for (&input) |*b| b.* = prng.random().intRangeAtMost(u8, 'a', 'z');
+
+        const compressed = try compressWithOptions(allocator, &input, .{
+            .quality = 11,
+            .lgwin = w,
+            .large_window = true,
+        });
+        defer allocator.free(compressed);
+
+        const decoded = try decompressWithOptions(allocator, compressed, .{
+            .large_window = true,
+        });
+        defer allocator.free(decoded);
+        try testing.expectEqualSlices(u8, &input, decoded);
+    }
+}
+
+test "npostfix and ndirect combinations round trip" {
+    const allocator = testing.allocator;
+    const input = "information about the network and the program window repeats here " ** 30;
+
+    const combos = [_][2]u32{
+        .{ 0, 0 }, .{ 1, 0 }, .{ 2, 4 }, .{ 3, 120 }, .{ 0, 15 }, .{ 1, 8 },
+    };
+    for (combos) |combo| {
+        const compressed = try compressWithOptions(allocator, input, .{
+            .quality = 11,
+            .npostfix = combo[0],
+            .ndirect = combo[1] << @intCast(combo[0]),
+        });
+        defer allocator.free(compressed);
+
+        const decoded = try decompress(allocator, compressed);
+        defer allocator.free(decoded);
+        try testing.expectEqualSlices(u8, input, decoded);
+    }
+}
+
+test "metadata metablock round trips with callbacks" {
+    const allocator = testing.allocator;
+
+    var enc = Encoder.init(allocator, .{ .quality = 9 });
+    defer enc.deinit();
+    try enc.compressStream(.process, "payload before metadata");
+    try enc.compressStream(.emit_metadata, "META-123");
+    try enc.compressStream(.finish, null);
+
+    var whole: std.ArrayList(u8) = .empty;
+    defer whole.deinit(allocator);
+    var tmp: [4096]u8 = undefined;
+    while (enc.hasMoreOutput()) {
+        const n = enc.takeOutput(&tmp);
+        try whole.appendSlice(allocator, tmp[0..n]);
+    }
+
+    const Captured = struct {
+        seen: usize = 0,
+        buf: [64]u8 = undefined,
+        n: usize = 0,
+        fn start(ctx: ?*anyopaque, size: usize) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx.?));
+            self.seen = size;
+        }
+        fn chunk(ctx: ?*anyopaque, data: []const u8) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx.?));
+            // Chunks arrive in arbitrary splits; accumulate them.
+            @memcpy(self.buf[self.n..][0..data.len], data);
+            self.n += data.len;
+        }
+    };
+    var cap = Captured{};
+    var dec = Decoder.init(allocator, .{});
+    defer dec.deinit();
+    dec.setMetadataCallbacks(.{ .ctx = &cap, .start = Captured.start, .chunk = Captured.chunk });
+
+    var input: []const u8 = whole.items;
+    var out_buf: [64]u8 = undefined;
+    var avail: []u8 = &out_buf;
+    var total: u64 = 0;
+    try testing.expectEqual(DecodeResult.success, dec.decompressStream(&input, &avail, &total));
+    try testing.expectEqualStrings("payload before metadata", out_buf[0..@intCast(total)]);
+    try testing.expectEqual(@as(usize, 8), cap.seen);
+    try testing.expect(cap.n == cap.seen);
+    try testing.expectEqualStrings("META-123", cap.buf[0..cap.n]);
+}
+
+test "streaming compressor emits metadata between chunks" {
+    const allocator = testing.allocator;
+
+    var sc = StreamingCompressor.init(allocator, .{});
+    defer sc.deinit();
+    const head = try sc.process("chunk one; ");
+    defer allocator.free(head);
+    const meta = try sc.emitMetadata("note");
+    defer allocator.free(meta);
+    const tail = try sc.finish();
+    defer allocator.free(tail);
+
+    var whole: std.ArrayList(u8) = .empty;
+    defer whole.deinit(allocator);
+    try whole.appendSlice(allocator, head);
+    try whole.appendSlice(allocator, meta);
+    try whole.appendSlice(allocator, tail);
+
+    const decoded = try decompress(allocator, whole.items);
+    defer allocator.free(decoded);
+    try testing.expectEqualStrings("chunk one; ", decoded);
+}
+
+test "static dictionary words survive round trip at high quality" {
+    const allocator = testing.allocator;
+    // Natural-language text rich in built-in corpus vocabulary.
+    const input = "Information technology transformed the nation. Windows programs run " ++
+        "across networks. International theory on government and communication " ++
+        "developed over generations of political transformation in America. " ++
+        "The quick brown fox jumps over the lazy dog near the river bank. ";
+
+    inline for (.{ 5, 9, 11 }) |q| {
+        const compressed = try compressWithOptions(allocator, input, .{ .quality = q });
+        defer allocator.free(compressed);
+        const decoded = try decompress(allocator, compressed);
+        defer allocator.free(decoded);
+        try testing.expectEqualSlices(u8, input, decoded);
+    }
+}
+
+test "literal block switching on heterogeneous content" {
+    const allocator = testing.allocator;
+    // Distinct character classes in long runs: the splitter should code each
+    // class through its own literal block type and tree.
+    var input: [64000]u8 = undefined;
+    var prng = std.Random.DefaultPrng.init(99);
+    const classes = [_][2]u8{
+        .{ 'a', 'z' }, .{ 'A', 'Z' }, .{ '0', '9' }, .{ '!', '/' },
+    };
+    var pos: usize = 0;
+    var round: usize = 0;
+    while (pos < input.len) : (round += 1) {
+        const cls = classes[round % classes.len];
+        const span = @min(@as(usize, 8000), input.len - pos);
+        for (input[pos..][0..span]) |*b| {
+            b.* = prng.random().intRangeAtMost(u8, cls[0], cls[1]);
+        }
+        pos += span;
+    }
+
+    inline for (.{ 9, 11 }) |q| {
+        const compressed = try compressWithOptions(allocator, &input, .{ .quality = q });
+        defer allocator.free(compressed);
+        const decoded = try decompress(allocator, compressed);
+        defer allocator.free(decoded);
+        try testing.expectEqualSlices(u8, &input, decoded);
+    }
+}
+
+test "metadata empty payload round trips" {
+    const allocator = testing.allocator;
+    var enc = Encoder.init(allocator, .{});
+    defer enc.deinit();
+    try enc.compressStream(.emit_metadata, "");
+    try enc.compressStream(.finish, "after empty metadata");
+    var whole: std.ArrayList(u8) = .empty;
+    defer whole.deinit(allocator);
+    var tmp: [512]u8 = undefined;
+    while (enc.hasMoreOutput()) {
+        const n = enc.takeOutput(&tmp);
+        try whole.appendSlice(allocator, tmp[0..n]);
+    }
+    const decoded = try decompress(allocator, whole.items);
+    defer allocator.free(decoded);
+    try testing.expectEqualStrings("after empty metadata", decoded);
+}
+
+test "streaming decompression with small feeds" {
+    const allocator = testing.allocator;
+    const input = "resumption across sub-byte boundaries must preserve every bit " ** 40;
+
+    const compressed = try compressWithOptions(allocator, input, .{ .quality = 9 });
+    defer allocator.free(compressed);
+
+    var sd = StreamingDecompressor.init(allocator, .{});
+    defer sd.deinit();
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
+    var buf: [256]u8 = undefined;
+
+    for (compressed) |byte| sd.feed(&.{byte});
+    sd.endInput();
+
+    while (!sd.isFinished()) {
+        const n = try sd.take(&buf);
+        if (n > 0) try out.appendSlice(allocator, buf[0..n]);
+        if (n == 0 and sd.hasError()) return error.BrotliStreamError;
+    }
+    try testing.expectEqualSlices(u8, input, out.items);
+}
+
+test "streaming decompression with mixed chunk sizes" {
+    const allocator = testing.allocator;
+    const input = "streaming decompression must work with arbitrary chunk sizes." ** 20;
+
+    const compressed = try compressWithOptions(allocator, input, .{ .quality = 9 });
+    defer allocator.free(compressed);
+
+    var sd = StreamingDecompressor.init(allocator, .{});
+    defer sd.deinit();
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
+    var buf: [256]u8 = undefined;
+
+    const sizes = [_]usize{ 1, 3, 7, 64, 128 };
+    var ci: usize = 0;
+    var si: usize = 0;
+    while (ci < compressed.len) {
+        const sz = sizes[si % sizes.len];
+        const end = @min(ci + sz, compressed.len);
+        sd.feed(compressed[ci..end]);
+        ci = end;
+        si += 1;
+    }
+    sd.endInput();
+
+    while (!sd.isFinished()) {
+        const n = try sd.take(&buf);
+        if (n > 0) try out.appendSlice(allocator, buf[0..n]);
+        if (n == 0 and sd.hasError()) return error.BrotliStreamError;
+    }
+    try testing.expectEqualSlices(u8, input, out.items);
 }

@@ -38,3 +38,11 @@ sc.setProgress(myCallback, &my_ctx);
 ```
 
 Fires during large streaming compressions — wire it to a progress bar.
+## End of Input
+
+```zig
+sd.endInput();
+```
+
+Signals that no more compressed data will arrive, allowing the decoder to
+flush its internal state. Call this after feeding the last chunk.

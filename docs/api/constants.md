@@ -46,18 +46,18 @@ pub const WINDOW_GAP = 16;
 | `MAX_DISTANCE_BITS` | 24 | Standard window distance bits |
 | `MAX_DISTANCE` | `0x3FFFFFC` | Max expressible distance (NPOSTFIX=0) |
 | `MAX_ALLOWED_DISTANCE` | `0x7FFFFFFC` | Absolute decoder limit |
-| `WINDOW_GAP` | 16 | Ring-buffer slack (spec §9.1) |
+| `WINDOW_GAP` | 16 | Ring-buffer slack (spec Â§9.1) |
 | `BLOCK_SIZE_CAP` | `1 << 24` | Metablock length ceiling |
 
 ## Version
 
 ```zig
-pub const version = "0.0.2";
+pub const version = "0.0.3";
 pub const version_number: u32 = 2;
 pub const spec_version = "1.2.0";       // implemented format spec level
 pub const spec_version_number: u32 = 10200;
 
-pub fn versionString() []const u8 // "0.0.2"
+pub fn versionString() []const u8 // "0.0.3"
 pub fn versionNumber() u32        // 2
 ```
 

@@ -35,10 +35,10 @@ pub const Options = struct {
 | `lgwin` | `u32` | `22` | Window bits `10`..`24` (clamped); bounds match distance |
 | `mode` | `Mode` | `.generic` | `.generic`, `.text`, or `.font` analysis hint |
 | `lgblock` | `u32` | `0` | Block-size hint (accepted for API parity) |
-| `disable_literal_context_modeling` | `bool` | `false` | Accepted for API parity; encoder uses a fixed context layout |
+| `disable_literal_context_modeling` | `bool` | `false` | Set to skip second-order context modeling (encoder falls back to single-tree layout) |
 | `size_hint` | `usize` | `0` | Expected total input size; improves progress reporting |
 | `large_window` | `bool` | `false` | Accept LGWIN values up to 30 for interoperability |
-| `npostfix` / `ndirect` | `u32` | `0` | Distance parameterization (accepted for API parity) |
+| `npostfix` / `ndirect` | `u32` | `0` | Distance coding parameters; NDIRECT is clamped to `15 << NPOSTFIX` |
 | `progress` | `?ProgressCallback` | `null` | Called with `(ctx, bytes_done, bytes_total)` during streaming |
 | `progress_ctx` | `?*anyopaque` | `null` | User pointer passed to the callback |
 

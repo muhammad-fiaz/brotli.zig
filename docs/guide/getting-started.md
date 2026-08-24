@@ -5,14 +5,14 @@ description: Get up and running with brotli.zig in minutes.
 
 # Getting Started
 
-brotli.zig is a complete native Zig implementation of [Brotli](https://www.brotli.org/) compression (RFC 7932). No C bindings, no external dependencies — just Zig.
+brotli.zig is a complete native Zig implementation of [Brotli](https://www.brotli.org/) compression (RFC 7932). No C bindings, no external dependencies â€” just Zig.
 
 ::: warning Version Requirement
 This library targets **Zig 0.16.0** (stable). Download from [ziglang.org](https://ziglang.org/download/).
 
 | Zig Version | Status |
 |-------------|--------|
-| 0.16.0 | Supported — required for this library |
+| 0.16.0 | Supported â€” required for this library |
 :::
 
 ## Quick Start
@@ -21,7 +21,7 @@ Add brotli.zig to your `build.zig.zon`:
 
 ```zig
 .brotli = .{
-    .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.2.tar.gz",
+    .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz",
     .hash = "...",  // use zig fetch --save to get the hash
 },
 ```
@@ -69,7 +69,7 @@ pub fn main() !void {
 
 ### With Quality Level
 
-Quality is a plain `u32` in range 0–11:
+Quality is a plain `u32` in range 0â€“11:
 
 ```zig
 // Fastest
@@ -130,8 +130,8 @@ defer sd.deinit();
 
 ## What's Next
 
-- [Installation](/guide/installation) — Detailed setup instructions
-- [Compression](/guide/compression) — All compression options
-- [Decompression](/guide/decompression) — Decompression details
-- [Streaming](/guide/streaming) — Chunk-based processing
-- [Dictionaries](/guide/dictionaries) — Dictionary compression
+- [Installation](/guide/installation) â€” Detailed setup instructions
+- [Compression](/guide/compression) â€” All compression options
+- [Decompression](/guide/decompression) â€” Decompression details
+- [Streaming](/guide/streaming) â€” Chunk-based processing
+- [Dictionaries](/guide/dictionaries) â€” Dictionary compression

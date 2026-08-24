@@ -62,3 +62,21 @@ _ = try brotli.decompressInto(allocator, try brotli.compress(allocator, data), d
 | 3–6 | Balanced |
 | 7–9 | Ratio-sensitive |
 | 10–11 | Maximum analysis (web assets) |
+
+## Automatic Layout Selection
+
+At quality 4+, the encoder automatically picks the best literal layout per
+metablock: plain single-tree, second-order context modeling with clustered
+context maps, or literal block switching. No manual configuration needed.
+
+## Large Window
+
+```zig
+const compressed = try brotli.compressWithOptions(allocator, data, .{
+    .quality = 11,
+    .lgwin = 30,
+    .large_window = true,
+});
+```
+
+Requires `.large_window = true` on the decoder side. Not RFC-compatible.

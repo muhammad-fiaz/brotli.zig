@@ -25,7 +25,7 @@ pub fn compressWithOptions(
 ) ![]u8
 ```
 
-Full control: quality (0–11), lgwin (10–24), mode, size hint, progress
+Full control: quality (0â€“11), lgwin (10â€“24), mode, size hint, progress
 callback. See [CompressionOptions](./compress-options).
 
 ### `decompress`
@@ -76,11 +76,11 @@ Upper bound for output allocation (mirrors `BrotliEncoderMaxCompressedSize`).
 ## Version
 
 ```zig
-brotli.version        // "0.0.2"
-brotli.versionNumber() // 2
-brotli.versionString() // "0.0.2"
+brotli.version        // "0.0.3"
+brotli.versionNumber() // 3
+brotli.versionString() // "0.0.3"
 ```
 
 ## Constants
 
-Quality/window bounds and format sizes — see [Constants](./constants).
+Quality/window bounds and format sizes â€” see [Constants](./constants).
