@@ -1539,7 +1539,7 @@ pub const Encoder = struct {
                             // Largest representable chunk: reps in 2^c..2^(c+1)-1.
                             var cc: u5 = 1;
                             while (cc + 1 <= rle_max and
-                                (@as(usize, 1) << @as(u6, @intCast(cc + 1))) <= left) cc += 1;
+                                (@as(usize, 1) << @as(u5, @intCast(cc + 1))) <= left) cc += 1;
                             const base_rep = @as(usize, 1) << cc;
                             var extra = left - base_rep;
                             const max_extra = (@as(usize, 1) << cc) - 1;

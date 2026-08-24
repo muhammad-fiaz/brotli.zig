@@ -159,7 +159,7 @@ fn exchangeLengths(freqs: []const u32, max_depth: u8, depths: []u8) void {
     std.mem.sort(u16, order[0..m], SortCtx{ .freqs = freqs }, SortCtx.lessThan);
 
     var k: u6 = 0;
-    while ((@as(usize, 1) << k) < m) k += 1;
+    while ((@as(usize, 1) << @as(u5, @intCast(k))) < m) k += 1;
     // k = ceil(log2(m)); complete tree: x leaves at depth k-1, y at depth k.
     const kk: usize = k;
     const x: usize = (@as(usize, 1) << @intCast(kk)) - m;

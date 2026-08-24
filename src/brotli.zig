@@ -120,7 +120,10 @@ pub const StreamingDecompressor = struct {
             .success => self.finished_ = true,
             .needs_more_input => {},
             .needs_more_output => {},
-            .err => return error.BrotliStreamError,
+            .err => {
+                std.debug.print("STREAM ERR: {s}\n", .{self.inner.errorCode().name()});
+                return error.BrotliStreamError;
+            },
         }
         return out.len - avail.len;
     }
@@ -320,9 +323,11 @@ pub fn compressWithOptions(
 /// BrotliEncoderMaxCompressedSize).
 pub fn maxCompressedSize(input_size: usize) usize {
     if (input_size == 0) return 2;
+    // Wrapping arithmetic keeps this correct (and non-panicking) on targets
+    // where usize is narrower than the largest supported stream.
     const num_large_blocks = input_size >> 14;
     const overhead = 2 + 4 * num_large_blocks + 4;
-    const result = input_size + overhead;
+    const result = input_size +% overhead;
     if (result < input_size) return 0;
     return result;
 }
@@ -823,4 +828,22 @@ test "literal block switching on heterogeneous content" {
         defer allocator.free(decoded);
         try testing.expectEqualSlices(u8, &input, decoded);
     }
+}
+
+test "metadata empty payload round trips" {
+    const allocator = testing.allocator;
+    var enc = Encoder.init(allocator, .{});
+    defer enc.deinit();
+    try enc.compressStream(.emit_metadata, "");
+    try enc.compressStream(.finish, "after empty metadata");
+    var whole: std.ArrayList(u8) = .empty;
+    defer whole.deinit(allocator);
+    var tmp: [512]u8 = undefined;
+    while (enc.hasMoreOutput()) {
+        const n = enc.takeOutput(&tmp);
+        try whole.appendSlice(allocator, tmp[0..n]);
+    }
+    const decoded = try decompress(allocator, whole.items);
+    defer allocator.free(decoded);
+    try testing.expectEqualStrings("after empty metadata", decoded);
 }

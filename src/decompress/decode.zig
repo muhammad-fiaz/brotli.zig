@@ -769,7 +769,7 @@ pub const Decoder = struct {
                 return fail(.format_simple_huffman_alphabet);
             }
             // Symbols are staged in dedicated storage (never alias next_of).
-            self.simple_vals[i] = @intCast(v);
+            self.simple_vals[@intCast(i)] = @intCast(v);
             i += 1;
         }
         self.sub_loop_counter = i;
@@ -779,7 +779,7 @@ pub const Decoder = struct {
         while (i < num_symbols) : (i += 1) {
             var k = i + 1;
             while (k <= num_symbols) : (k += 1) {
-                if (self.simple_vals[i] == self.simple_vals[k]) {
+                if (self.simple_vals[@intCast(i)] == self.simple_vals[@intCast(k)]) {
                     return fail(.format_simple_huffman_same);
                 }
             }
@@ -856,7 +856,7 @@ pub const Decoder = struct {
                 self.repeat_code_len = repeat_code_len;
                 return .needs_more_input;
             }
-            const p = &self.cl_table[br.getBits(huff.HUFFMAN_MAX_CODE_LENGTH_CODE_LENGTH)];
+            const p = &self.cl_table[@intCast(br.getBits(huff.HUFFMAN_MAX_CODE_LENGTH_CODE_LENGTH))];
             const code_len = p.value; // 0..17
             br.dropBits(p.bits); // 1..5 bits
             if (code_len < constants.REPEAT_PREVIOUS_CODE_LENGTH) {
@@ -884,7 +884,7 @@ pub const Decoder = struct {
         var space = self.h_space;
         var i = self.sub_loop_counter;
         while (i < constants.CODE_LENGTH_CODES) : (i += 1) {
-            const code_len_idx = prefix.code_length_prefix_order[i];
+            const code_len_idx = prefix.code_length_prefix_order[@intCast(i)];
             var ix: u64 = 0;
             const avail = br.availableBits();
             if (!br.ensureBits(4)) {
@@ -902,6 +902,7 @@ pub const Decoder = struct {
             }
 
             const v = prefix.code_length_prefix_value[@intCast(ix)];
+            std.debug.print("CLCL i={} ix={} len={} v={} avail_pre={}\n", .{ i, ix, prefix.code_length_prefix_length[@intCast(ix)], v, avail });
             br.dropBits(prefix.code_length_prefix_length[@intCast(ix)]);
             self.code_length_code_lengths[code_len_idx] = v;
             if (v != 0) {
@@ -917,6 +918,7 @@ pub const Decoder = struct {
         self.sub_loop_counter = i;
         self.h_repeat = num_codes;
         self.h_space = space;
+        std.debug.print("CLCL END num_codes={} space={}\n", .{ num_codes, space });
         if (!(num_codes == 1 or space == 0)) {
             return fail(.format_cl_space);
         }
@@ -1111,12 +1113,12 @@ pub const Decoder = struct {
                                 return .needs_more_input;
                             }
                             if (bits == 0) {
-                                context_map_arg.*[context_index] = 0;
+                                context_map_arg.*[@intCast(context_index)] = 0;
                                 context_index += 1;
                                 continue;
                             }
                             if (bits > max_run_length_prefix) {
-                                context_map_arg.*[context_index] =
+                                context_map_arg.*[@intCast(context_index)] =
                                     @intCast(bits - max_run_length_prefix);
                                 context_index += 1;
                                 continue;
@@ -1944,8 +1946,12 @@ pub const Decoder = struct {
         }
         if (code != .success) {}
         self.err = code;
-        if (self.buffer_length != 0 and self.br.availIn() == 0) {
-            // The internal buffer was depleted at the very end.
+        // Discard a depleted internal buffer only when no sub-byte state is
+        // pending: a partially consumed first byte must survive until the
+        // next call primes the reader back to its exact bit position.
+        if (self.buffer_length != 0 and self.br.availIn() == 0 and
+            self.resume_skip_bits == 0)
+        {
             self.buffer_length = 0;
         }
         return switch (code) {
@@ -1969,12 +1975,22 @@ pub const Decoder = struct {
             return self.saveErrorCode(fail(.error_invalid_arguments));
         }
 
+        std.debug.print("CALL bl={} pos={} bits={} skip={}\n", .{ self.buffer_length, self.br.pos, self.br.bit_pos, self.resume_skip_bits });
         if (self.buffer_length == 0) {
             self.br.reset(input);
         } else {
             // Resume from the internal buffer; states will request more
             // input naturally when its bits are exhausted.
             self.br.reset(self.buffer[0..self.buffer_length]);
+            if (self.resume_skip_bits != 0) {
+                // The first buffered byte is partially consumed: prime the
+                // reader mid-byte so decoding continues at the exact bit.
+                const sk: u6 = self.resume_skip_bits;
+                self.br.val = @as(u64, self.buffer[0]) >> @intCast(sk);
+                self.br.bit_pos = 8 - @as(u32, sk);
+                self.br.pos = 1;
+                self.resume_skip_bits = 0;
+            }
         }
 
         state_loop: while (true) {
@@ -1990,8 +2006,9 @@ pub const Decoder = struct {
                         }
                     }
                     if (self.buffer_length != 0) {
-                        if (self.br.availIn() == 0) {
-                            // Finished reading the internal buffer.
+                        if (self.br.availIn() == 0 and self.br.bit_pos == 0) {
+                            // Finished reading the internal buffer on a byte
+                            // boundary; safe to switch to the caller's input.
                             self.buffer_length = 0;
                             result = .success;
                             self.br.reset(input);
@@ -2009,14 +2026,23 @@ pub const Decoder = struct {
                         self.compactBuffer();
                         break :state_loop;
                     } else {
-                        // Copy tail to the internal buffer and return.
+                        // Copy the tail to the internal buffer and return.
+                        // A partially consumed byte is re-staged too, with
+                        // its sub-byte position recorded, so no bit of the
+                        // stream is ever lost across calls.
                         self.br.unload();
-                        input = self.br.input[self.br.pos..];
-                        while (input.len != 0 and self.buffer_length < 8) {
-                            self.buffer[self.buffer_length] = input[0];
+                        var back: usize = 0;
+                        if (self.br.bit_pos != 0) back = 1;
+                        const start = self.br.pos -| back;
+                        var src_tail = self.br.input[start..];
+                        while (src_tail.len != 0 and self.buffer_length < 8) {
+                            self.buffer[self.buffer_length] = src_tail[0];
                             self.buffer_length += 1;
-                            input = input[1..];
+                            src_tail = src_tail[1..];
                         }
+                        self.resume_skip_bits =
+                            if (back == 1) @intCast(self.br.bit_pos) else 0;
+                        input = self.br.input[start..];
                         break :state_loop;
                     }
                 }
@@ -2040,6 +2066,7 @@ pub const Decoder = struct {
                         continue :state_loop;
                     }
                     result = self.decodeWindowBits(&self.br);
+                    std.debug.print("HDR wbits done\n", .{});
                     if (result != .success) continue :state_loop;
                     self.run_state = if (self.large_window)
                         .large_window_bits
@@ -2086,6 +2113,7 @@ pub const Decoder = struct {
                 },
                 .metablock_header => {
                     result = self.decodeMetaBlockLength(&self.br);
+                    std.debug.print("HDR mlen={} last={} uncomp={}\n", .{ self.meta_block_remaining_len, self.is_last_metablock, self.is_uncompressed });
                     if (result != .success) continue :state_loop;
                     if (self.is_metadata or self.is_uncompressed) {
                         if (!self.br.jumpToByteBoundary()) {
@@ -2130,6 +2158,7 @@ pub const Decoder = struct {
                     result = self.decodeVarLenUint8(&self.br, &tmp);
                     if (result != .success) continue :state_loop;
                     self.num_block_types[idx] = @as(u64, tmp) + 1;
+                    std.debug.print("HDR nbl[{}]={}\n", .{ idx, self.num_block_types[idx] });
                     if (self.num_block_types[idx] < 2) {
                         self.loop_counter += 1;
                         continue :state_loop;
@@ -2201,6 +2230,7 @@ pub const Decoder = struct {
                         result = .needs_more_input;
                         continue :state_loop;
                     }
+                    std.debug.print("HDR npnd raw={}\n", .{bits});
                     self.distance_postfix_bits = @intCast(bits & 3);
                     bits >>= 2;
                     self.num_direct_distance_codes =
@@ -2369,6 +2399,7 @@ pub const Decoder = struct {
                 },
             }
         }
+        std.debug.print("EXIT r={} bl={} skip={} pos={} bits={}\n", .{ result, self.buffer_length, self.resume_skip_bits, self.br.pos, self.br.bit_pos });
         next_in.* = input;
         return self.saveErrorCode(result);
     }
