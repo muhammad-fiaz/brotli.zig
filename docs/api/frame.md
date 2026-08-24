@@ -12,7 +12,7 @@ touching compressed data.
 ## Version
 
 ```zig
-pub const version = "0.0.4";
+pub const version = "0.0.3";
 pub const version_number: u32 = 2;      // 0*100*100 + 0*100 + 2
 pub const spec_version = "1.2.0";       // implemented RFC 7932 spec level
 pub const spec_version_number: u32 = 10200;

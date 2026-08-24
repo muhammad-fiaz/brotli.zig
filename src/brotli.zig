@@ -15,8 +15,8 @@
 const std = @import("std");
 
 /// Brotli codec specification version implemented (matches common/version.h).
-pub const version = "0.0.4";
-pub const version_number: u32 = 0 * 100 * 100 + 0 * 100 + 4;
+pub const version = "0.0.3";
+pub const version_number: u32 = 0 * 100 * 100 + 0 * 100 + 3;
 
 /// Data-format specification implemented (Brotli v1.2.0).
 pub const spec_version = "1.2.0";
@@ -408,7 +408,7 @@ const testing = std.testing;
 
 test "version accessors" {
     try testing.expectEqualStrings(version, versionString());
-    try testing.expectEqual(@as(u32, 4), versionNumber());
+    try testing.expectEqual(@as(u32, 3), versionNumber());
 }
 
 test "streaming decompressor on empty finalized stream" {

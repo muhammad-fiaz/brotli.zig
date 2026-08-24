@@ -30,7 +30,7 @@
 
 > [!IMPORTANT]
 > **Version 0.0.1 used C bindings** as a wrapper around the reference Brotli C library.
-> It is deprecated and should not be used in new projects. Starting with **v0.0.4**,
+> It is deprecated and should not be used in new projects. Starting with **v0.0.3**,
 > `brotli.zig` is a fully native Zig implementation — no C code, no libc, no external
 > dependencies. All compression and decompression runs entirely in Zig.
 
@@ -129,10 +129,10 @@ zig build -Dtarget=x86-windows
 
 ### Method 1: Zig Fetch (Recommended)
 
-**Latest Release (v0.0.4)**
+**Latest Release (v0.0.3)**
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz
 ```
 
 ### Method 2: Zig Fetch (Main Branch)
@@ -146,7 +146,7 @@ zig fetch --save git+https://github.com/muhammad-fiaz/brotli.zig.git
 ```zig
 .dependencies = .{
     .brotli = .{
-        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz",
         .hash = "...", // Run `zig fetch --save <url>` to generate the hash.
     },
 },
