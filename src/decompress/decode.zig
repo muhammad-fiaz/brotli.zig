@@ -902,7 +902,6 @@ pub const Decoder = struct {
             }
 
             const v = prefix.code_length_prefix_value[@intCast(ix)];
-            std.debug.print("CLCL i={} ix={} len={} v={} avail_pre={}\n", .{ i, ix, prefix.code_length_prefix_length[@intCast(ix)], v, avail });
             br.dropBits(prefix.code_length_prefix_length[@intCast(ix)]);
             self.code_length_code_lengths[code_len_idx] = v;
             if (v != 0) {
@@ -918,7 +917,6 @@ pub const Decoder = struct {
         self.sub_loop_counter = i;
         self.h_repeat = num_codes;
         self.h_space = space;
-        std.debug.print("CLCL END num_codes={} space={}\n", .{ num_codes, space });
         if (!(num_codes == 1 or space == 0)) {
             return fail(.format_cl_space);
         }
@@ -1975,7 +1973,6 @@ pub const Decoder = struct {
             return self.saveErrorCode(fail(.error_invalid_arguments));
         }
 
-        std.debug.print("CALL bl={} pos={} bits={} skip={}\n", .{ self.buffer_length, self.br.pos, self.br.bit_pos, self.resume_skip_bits });
         if (self.buffer_length == 0) {
             self.br.setInput(input);
         } else {
@@ -2067,7 +2064,6 @@ pub const Decoder = struct {
                         continue :state_loop;
                     }
                     result = self.decodeWindowBits(&self.br);
-                    std.debug.print("HDR wbits done\n", .{});
                     if (result != .success) continue :state_loop;
                     self.run_state = if (self.large_window)
                         .large_window_bits
@@ -2114,7 +2110,6 @@ pub const Decoder = struct {
                 },
                 .metablock_header => {
                     result = self.decodeMetaBlockLength(&self.br);
-                    std.debug.print("HDR mlen={} last={} uncomp={}\n", .{ self.meta_block_remaining_len, self.is_last_metablock, self.is_uncompressed });
                     if (result != .success) continue :state_loop;
                     if (self.is_metadata or self.is_uncompressed) {
                         if (!self.br.jumpToByteBoundary()) {
@@ -2159,7 +2154,6 @@ pub const Decoder = struct {
                     result = self.decodeVarLenUint8(&self.br, &tmp);
                     if (result != .success) continue :state_loop;
                     self.num_block_types[idx] = @as(u64, tmp) + 1;
-                    std.debug.print("HDR nbl[{}]={}\n", .{ idx, self.num_block_types[idx] });
                     if (self.num_block_types[idx] < 2) {
                         self.loop_counter += 1;
                         continue :state_loop;
@@ -2231,7 +2225,6 @@ pub const Decoder = struct {
                         result = .needs_more_input;
                         continue :state_loop;
                     }
-                    std.debug.print("HDR npnd raw={}\n", .{bits});
                     self.distance_postfix_bits = @intCast(bits & 3);
                     bits >>= 2;
                     self.num_direct_distance_codes =
@@ -2400,7 +2393,6 @@ pub const Decoder = struct {
                 },
             }
         }
-        std.debug.print("EXIT r={} bl={} skip={} pos={} bits={}\n", .{ result, self.buffer_length, self.resume_skip_bits, self.br.pos, self.br.bit_pos });
         next_in.* = input;
         return self.saveErrorCode(result);
     }
