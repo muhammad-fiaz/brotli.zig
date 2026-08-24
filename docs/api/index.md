@@ -77,7 +77,7 @@ Upper bound for output allocation (mirrors `BrotliEncoderMaxCompressedSize`).
 
 ```zig
 brotli.version        // "0.0.3"
-brotli.versionNumber() // 2
+brotli.versionNumber() // 3
 brotli.versionString() // "0.0.3"
 ```
 

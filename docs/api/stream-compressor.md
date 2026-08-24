@@ -63,3 +63,13 @@ const tail = try sc.finish();
 defer allocator.free(tail);
 try out.appendSlice(allocator, tail);
 ```
+
+## Metadata Emission
+
+```zig
+pub fn emitMetadata(self: *StreamingCompressor, payload: []const u8) ![]u8
+```
+
+Emits a metadata metablock carrying arbitrary bytes. Metadata blocks are
+skipped by decoders that do not observe them and never appear in the
+decompressed output.

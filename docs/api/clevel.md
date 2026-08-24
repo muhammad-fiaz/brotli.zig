@@ -17,7 +17,7 @@ pub const MAX_QUALITY: u32 = 11;
 pub const DEFAULT_QUALITY: u32 = 11;
 
 pub fn versionString() []const u8 // "0.0.3"
-pub fn versionNumber() u32        // 2
+pub fn versionNumber() u32        // 3
 ```
 
 Use with `brotli.compressWithOptions` or `StreamingCompressor`:
