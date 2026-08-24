@@ -277,11 +277,6 @@ defer allocator.free(tiny); // only decodable with the same dict attached
 
 The built-in RFC 7932 static dictionary works automatically on both sides.
 
-> [!NOTE]
-> **Streaming feed granularity:** decompression is validated for feed chunks
-> of 64 bytes and larger. Smaller chunks (down to byte-by-byte) may hit an
-> internal resumption defect; keep socket read buffers at 64 bytes or more.
-
 
 ## API Reference
 

@@ -1977,17 +1977,18 @@ pub const Decoder = struct {
 
         std.debug.print("CALL bl={} pos={} bits={} skip={}\n", .{ self.buffer_length, self.br.pos, self.br.bit_pos, self.resume_skip_bits });
         if (self.buffer_length == 0) {
-            self.br.reset(input);
+            self.br.setInput(input);
         } else {
             // Resume from the internal buffer; states will request more
             // input naturally when its bits are exhausted.
-            self.br.reset(self.buffer[0..self.buffer_length]);
+            self.br.setInput(self.buffer[0..self.buffer_length]);
             if (self.resume_skip_bits != 0) {
-                // The first buffered byte is partially consumed: prime the
-                // reader mid-byte so decoding continues at the exact bit.
-                const sk: u6 = self.resume_skip_bits;
-                self.br.val = @as(u64, self.buffer[0]) >> @intCast(sk);
-                self.br.bit_pos = 8 - @as(u32, sk);
+                // The first buffered byte is partially consumed:
+                // `resume_skip_bits` counts REMAINING unread bits. Shift past
+                // the consumed low bits to align on the next unread one.
+                const rem: u6 = self.resume_skip_bits;
+                self.br.val = @as(u64, self.buffer[0]) >> @intCast(8 - @as(u32, rem));
+                self.br.bit_pos = rem;
                 self.br.pos = 1;
                 self.resume_skip_bits = 0;
             }
@@ -2011,7 +2012,7 @@ pub const Decoder = struct {
                             // boundary; safe to switch to the caller's input.
                             self.buffer_length = 0;
                             result = .success;
-                            self.br.reset(input);
+                            self.br.setInput(input);
                             continue :state_loop;
                         } else if (input.len != 0) {
                             // Pull one more byte into the internal buffer.
@@ -2019,7 +2020,7 @@ pub const Decoder = struct {
                             std.debug.assert(self.buffer_length < 8);
                             self.buffer[self.buffer_length] = input[0];
                             self.buffer_length += 1;
-                            self.br.reset(self.buffer[0..self.buffer_length]);
+                            self.br.setInput(self.buffer[0..self.buffer_length]);
                             input = input[1..];
                             continue :state_loop;
                         }

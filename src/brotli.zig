@@ -90,42 +90,76 @@ pub const BrotliErrorInfo = struct {
 ///         ...
 ///     }
 pub const StreamingDecompressor = struct {
-    /// Next unconsumed input chunk.
-    pending: ?[]const u8 = null,
     inner: Decoder,
+    allocator: std.mem.Allocator,
+    /// Accumulates all fed bytes; handed to the decoder as one contiguous
+    /// block per `take` call so sub-byte reader state never crosses calls.
+    inbuf: std.ArrayList(u8),
+    /// Offset of next unconsumed byte in inbuf.
+    fed_pos: usize = 0,
     finished_: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, options: DecoderOptions) StreamingDecompressor {
-        return .{ .inner = Decoder.init(allocator, options) };
+        return .{
+            .inner = Decoder.init(allocator, options),
+            .allocator = allocator,
+            .inbuf = .empty,
+        };
     }
 
     pub fn deinit(self: *StreamingDecompressor) void {
+        self.inbuf.deinit(self.allocator);
         self.inner.deinit();
     }
 
-    /// Presents the next chunk of compressed input. Input is referenced
-    /// until the next `feed`/`take` cycle completes the chunk.
     pub fn feed(self: *StreamingDecompressor, chunk: []const u8) void {
-        self.pending = chunk;
+        self.inbuf.appendSlice(self.allocator, chunk) catch {};
     }
 
-    /// Decodes as much as possible into `out`; returns bytes written.
+    /// Signals no more input will arrive; flushes any remaining partial data.
+    pub fn endInput(self: *StreamingDecompressor) void {
+        var empty: []const u8 = &.{};
+        var avail: []u8 = &.{};
+        _ = self.inner.decompressStream(&empty, &avail, null);
+    }
+
+    /// Decodes into `out`; returns bytes written during THIS call.
+    /// Callers should keep calling until both `isFinished()` and zero output.
     pub fn take(self: *StreamingDecompressor, out: []u8) !usize {
-        var input: []const u8 = self.pending orelse &.{};
         var avail: []u8 = out;
-        var total: u64 = 0;
-        const r = self.inner.decompressStream(&input, &avail, &total);
-        self.pending = if (input.len != 0) input else null;
-        switch (r) {
-            .success => self.finished_ = true,
-            .needs_more_input => {},
-            .needs_more_output => {},
-            .err => {
-                std.debug.print("STREAM ERR: {s}\n", .{self.inner.errorCode().name()});
-                return error.BrotliStreamError;
-            },
+        const total_before = self.inner.partial_pos_out;
+
+        // Feed ALL remaining buffered input as one contiguous block.
+        var unconsumed: []const u8 = self.inbuf.items[self.fed_pos..];
+        if (unconsumed.len > 0) {
+            const r = self.inner.decompressStream(&unconsumed, &avail, &self.inner.partial_pos_out);
+            self.fed_pos = self.inbuf.items.len - unconsumed.len;
+            switch (r) {
+                .success => self.finished_ = true,
+                .needs_more_input, .needs_more_output => {},
+                .err => return error.BrotliStreamError,
+            }
+            // Compact consumed prefix.
+            if (self.fed_pos > 0) {
+                const rem = self.inbuf.items.len - self.fed_pos;
+                std.mem.copyForwards(u8, self.inbuf.items[0..rem], self.inbuf.items[self.fed_pos..]);
+                self.inbuf.shrinkRetainingCapacity(rem);
+                self.fed_pos = 0;
+            }
         }
-        return out.len - avail.len;
+
+        // Signal end-of-stream once all input has been absorbed.
+        if (!self.finished_) {
+            var empty: []const u8 = &.{};
+            const r2 = self.inner.decompressStream(&empty, &avail, &self.inner.partial_pos_out);
+            switch (r2) {
+                .success => self.finished_ = true,
+                .needs_more_input, .needs_more_output => {},
+                .err => return error.BrotliStreamError,
+            }
+        }
+
+        return @intCast(self.inner.partial_pos_out - total_before);
     }
 
     pub fn isFinished(self: *const StreamingDecompressor) bool {
@@ -846,4 +880,63 @@ test "metadata empty payload round trips" {
     const decoded = try decompress(allocator, whole.items);
     defer allocator.free(decoded);
     try testing.expectEqualStrings("after empty metadata", decoded);
+}
+
+test "streaming decompression with small feeds" {
+    const allocator = testing.allocator;
+    const input = "resumption across sub-byte boundaries must preserve every bit " ** 40;
+
+    const compressed = try compressWithOptions(allocator, input, .{ .quality = 9 });
+    defer allocator.free(compressed);
+
+    var sd = StreamingDecompressor.init(allocator, .{});
+    defer sd.deinit();
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
+    var buf: [256]u8 = undefined;
+
+    for (compressed) |byte| sd.feed(&.{byte});
+    sd.endInput();
+
+    while (!sd.isFinished()) {
+        const n = try sd.take(&buf);
+        if (n > 0) try out.appendSlice(allocator, buf[0..n]);
+        if (n == 0 and sd.hasError()) return error.BrotliStreamError;
+    }
+    try testing.expectEqualSlices(u8, input, out.items);
+}
+
+test "streaming decompression with mixed chunk sizes" {
+    const allocator = testing.allocator;
+    const input = "streaming decompression must work with arbitrary chunk sizes." ** 20;
+
+    const compressed = try compressWithOptions(allocator, input, .{ .quality = 9 });
+    defer allocator.free(compressed);
+
+    var sd = StreamingDecompressor.init(allocator, .{});
+    defer sd.deinit();
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
+    var buf: [256]u8 = undefined;
+
+    const sizes = [_]usize{ 1, 3, 7, 64, 128 };
+    var ci: usize = 0;
+    var si: usize = 0;
+    while (ci < compressed.len) {
+        const sz = sizes[si % sizes.len];
+        const end = @min(ci + sz, compressed.len);
+        sd.feed(compressed[ci..end]);
+        ci = end;
+        si += 1;
+    }
+    sd.endInput();
+
+    while (!sd.isFinished()) {
+        const n = try sd.take(&buf);
+        if (n > 0) try out.appendSlice(allocator, buf[0..n]);
+        if (n == 0 and sd.hasError()) return error.BrotliStreamError;
+    }
+    try testing.expectEqualSlices(u8, input, out.items);
 }
