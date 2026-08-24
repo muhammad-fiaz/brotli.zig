@@ -16,11 +16,11 @@ pub const kLog2Table: [LOG2_TABLE_SIZE]f64 = blk: {
 
 /// Floor of log2 for non-zero values.
 pub inline fn log2FloorNonZero(n: usize) u32 {
-    return 31 - @clz(@as(u32, @intCast(n & 0xFFFFFFFF)));
+    return std.math.log2_int(usize, n);
 }
 
 pub inline fn log2FloorNonZero64(n: u64) u32 {
-    return 63 - @clz(n);
+    return std.math.log2_int(u64, n);
 }
 
 /// Faster logarithm for small integers, with the property log2(0) == 0.

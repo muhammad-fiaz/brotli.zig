@@ -35,7 +35,7 @@ pub const BitSink = struct {
 
 fn log2Floor(x: u64) u6 {
     if (x == 0) return 0;
-    return @intCast(63 - @clz(x));
+    return std.math.log2_int(u64, x);
 }
 
 /// Width in bits used to store one raw symbol of an alphabet of size

@@ -1,4 +1,4 @@
----
+﻿---
 title: Format Introspection & Constants
 description: Version accessors, limits, and format constants exposed by brotli.zig.
 ---
@@ -6,13 +6,13 @@ description: Version accessors, limits, and format constants exposed by brotli.z
 # Format Introspection & Constants
 
 Brotli streams carry no per-frame header metadata like other formats; introspection is
-limited to version info, bounds and format constants — all available without
+limited to version info, bounds and format constants â€” all available without
 touching compressed data.
 
 ## Version
 
 ```zig
-pub const version = "0.0.2";
+pub const version = "0.0.3";
 pub const version_number: u32 = 2;      // 0*100*100 + 0*100 + 2
 pub const spec_version = "1.2.0";       // implemented RFC 7932 spec level
 pub const spec_version_number: u32 = 10200;

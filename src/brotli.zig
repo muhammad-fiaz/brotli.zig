@@ -1,5 +1,5 @@
 //! Native Zig implementation of the Brotli compressed-data format
-//! (RFC 7932 / Large Window Brotli) — public API.
+//! (RFC 7932 / Large Window Brotli) â€” public API.
 //!
 //! This is a from-scratch implementation: no C bindings, no libc, no
 //! external dependencies.
@@ -15,8 +15,8 @@
 const std = @import("std");
 
 /// Brotli codec specification version implemented (matches common/version.h).
-pub const version = "0.0.2";
-pub const version_number: u32 = 0 * 100 * 100 + 0 * 100 + 2;
+pub const version = "0.0.3";
+pub const version_number: u32 = 0 * 100 * 100 + 0 * 100 + 3;
 
 /// Data-format specification implemented (Brotli v1.2.0).
 pub const spec_version = "1.2.0";
@@ -251,6 +251,17 @@ pub const StreamingCompressor = struct {
         return self.drain();
     }
 
+    /// Emits a metadata metablock (RFC 7932 section 9.2) carrying `payload`.
+    /// Metadata is skipped by decoders that do not observe it and is never
+    /// part of the decompressed output.
+    pub fn emitMetadata(self: *StreamingCompressor, payload: []const u8) ![]u8 {
+        self.inner.compressStream(.emit_metadata, payload) catch |e| {
+            self.err = e;
+            return e;
+        };
+        return self.drain();
+    }
+
     /// Finishes the stream; the returned bytes end with the final block.
     pub fn finish(self: *StreamingCompressor) ![]u8 {
         if (!self.inner.isFinished()) {
@@ -358,7 +369,7 @@ const testing = std.testing;
 
 test "version accessors" {
     try testing.expectEqualStrings(version, versionString());
-    try testing.expectEqual(@as(u32, 2), versionNumber());
+    try testing.expectEqual(@as(u32, 3), versionNumber());
 }
 
 test "streaming decompressor on empty finalized stream" {
@@ -651,4 +662,136 @@ test "streaming compressor attachDictionary passthrough" {
     var total: u64 = 0;
     try testing.expectEqual(DecodeResult.success, d.decompressStream(&in, &avail, &total));
     try testing.expectEqualStrings(input, out[0..@intCast(total)]);
+}
+
+test "large window round trip up to 30 bits" {
+    const allocator = testing.allocator;
+
+    inline for (.{ 25, 28, 30 }) |w| {
+        var input: [40000]u8 = undefined;
+        var prng = std.Random.DefaultPrng.init(@intCast(w));
+        for (&input) |*b| b.* = prng.random().intRangeAtMost(u8, 'a', 'z');
+
+        const compressed = try compressWithOptions(allocator, &input, .{
+            .quality = 11,
+            .lgwin = w,
+            .large_window = true,
+        });
+        defer allocator.free(compressed);
+
+        const decoded = try decompressWithOptions(allocator, compressed, .{
+            .large_window = true,
+        });
+        defer allocator.free(decoded);
+        try testing.expectEqualSlices(u8, &input, decoded);
+    }
+}
+
+test "npostfix and ndirect combinations round trip" {
+    const allocator = testing.allocator;
+    const input = "information about the network and the program window repeats here " ** 30;
+
+    const combos = [_][2]u32{
+        .{ 0, 0 }, .{ 1, 0 }, .{ 2, 4 }, .{ 3, 120 }, .{ 0, 15 }, .{ 1, 8 },
+    };
+    for (combos) |combo| {
+        const compressed = try compressWithOptions(allocator, input, .{
+            .quality = 11,
+            .npostfix = combo[0],
+            .ndirect = combo[1] << @intCast(combo[0]),
+        });
+        defer allocator.free(compressed);
+
+        const decoded = try decompress(allocator, compressed);
+        defer allocator.free(decoded);
+        try testing.expectEqualSlices(u8, input, decoded);
+    }
+}
+
+test "metadata metablock round trips with callbacks" {
+    const allocator = testing.allocator;
+
+    var enc = Encoder.init(allocator, .{ .quality = 9 });
+    defer enc.deinit();
+    try enc.compressStream(.process, "payload before metadata");
+    try enc.compressStream(.emit_metadata, "META-123");
+    try enc.compressStream(.finish, null);
+
+    var whole: std.ArrayList(u8) = .empty;
+    defer whole.deinit(allocator);
+    var tmp: [4096]u8 = undefined;
+    while (enc.hasMoreOutput()) {
+        const n = enc.takeOutput(&tmp);
+        try whole.appendSlice(allocator, tmp[0..n]);
+    }
+
+    const Captured = struct {
+        seen: usize = 0,
+        buf: [64]u8 = undefined,
+        n: usize = 0,
+        fn start(ctx: ?*anyopaque, size: usize) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx.?));
+            self.seen = size;
+        }
+        fn chunk(ctx: ?*anyopaque, data: []const u8) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx.?));
+            // Chunks arrive in arbitrary splits; accumulate them.
+            @memcpy(self.buf[self.n..][0..data.len], data);
+            self.n += data.len;
+        }
+    };
+    var cap = Captured{};
+    var dec = Decoder.init(allocator, .{});
+    defer dec.deinit();
+    dec.setMetadataCallbacks(.{ .ctx = &cap, .start = Captured.start, .chunk = Captured.chunk });
+
+    var input: []const u8 = whole.items;
+    var out_buf: [64]u8 = undefined;
+    var avail: []u8 = &out_buf;
+    var total: u64 = 0;
+    try testing.expectEqual(DecodeResult.success, dec.decompressStream(&input, &avail, &total));
+    try testing.expectEqualStrings("payload before metadata", out_buf[0..@intCast(total)]);
+    try testing.expectEqual(@as(usize, 8), cap.seen);
+    try testing.expect(cap.n == cap.seen);
+    try testing.expectEqualStrings("META-123", cap.buf[0..cap.n]);
+}
+
+test "streaming compressor emits metadata between chunks" {
+    const allocator = testing.allocator;
+
+    var sc = StreamingCompressor.init(allocator, .{});
+    defer sc.deinit();
+    const head = try sc.process("chunk one; ");
+    defer allocator.free(head);
+    const meta = try sc.emitMetadata("note");
+    defer allocator.free(meta);
+    const tail = try sc.finish();
+    defer allocator.free(tail);
+
+    var whole: std.ArrayList(u8) = .empty;
+    defer whole.deinit(allocator);
+    try whole.appendSlice(allocator, head);
+    try whole.appendSlice(allocator, meta);
+    try whole.appendSlice(allocator, tail);
+
+    const decoded = try decompress(allocator, whole.items);
+    defer allocator.free(decoded);
+    try testing.expectEqualStrings("chunk one; ", decoded);
+}
+
+test "static dictionary words survive round trip at high quality" {
+    const allocator = testing.allocator;
+    // Natural-language text rich in built-in corpus vocabulary.
+    const input = "Information technology transformed the nation. Windows programs run " ++
+        "across networks. International theory on government and communication " ++
+        "developed over generations of political transformation in America. " ++
+        "The quick brown fox jumps over the lazy dog near the river bank. ";
+
+    inline for (.{ 5, 9, 11 }) |q| {
+        const compressed = try compressWithOptions(allocator, input, .{ .quality = q });
+        defer allocator.free(compressed);
+        const decoded = try decompress(allocator, compressed);
+        defer allocator.free(decoded);
+        try testing.expectEqualSlices(u8, input, decoded);
+    }
 }
