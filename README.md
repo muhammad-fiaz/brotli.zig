@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # brotli.zig
 
@@ -30,7 +30,7 @@
 
 > [!IMPORTANT]
 > **Version 0.0.1 used C bindings** as a wrapper around the reference Brotli C library.
-> It is deprecated and should not be used in new projects. Starting with **v0.0.3**,
+> It is deprecated and should not be used in new projects. Starting with **v0.0.4**,
 > `brotli.zig` is a fully native Zig implementation — no C code, no libc, no external
 > dependencies. All compression and decompression runs entirely in Zig.
 
@@ -44,7 +44,7 @@
 > - **LZ77 back-references** with distance ring-buffer shortcuts
 > - **Static dictionary** — the complete 122,784-byte RFC 7932 word list; the encoder emits dictionary word references (including uppercase transforms) and both sides accept custom raw dictionaries
 > - **Custom dictionaries** — attach shared raw bytes to encoder and decoder for small-payload compression
-> - **Native encoder** — hash-chain match finder, Huffman table construction, metablock emission, quality levels 0–11, NPOSTFIX/NDIRECT distance coding, large-window streams up to LGWIN 30, and metadata metablocks
+> - **Native encoder** — hash-chain match finder, Huffman table construction, metablock emission, quality levels 0–11, literal block switching, second-order context modeling with clustered context maps, NPOSTFIX/NDIRECT distance coding, large-window streams up to LGWIN 30, and metadata metablocks
 > - **Progress callbacks** — observe streaming compression progress for large files
 > - **Parameter API** — all nine `PARAM_*` encoder knobs mirroring the C enumeration
 
@@ -129,10 +129,10 @@ zig build -Dtarget=x86-windows
 
 ### Method 1: Zig Fetch (Recommended)
 
-**Latest Release (v0.0.3)**
+**Latest Release (v0.0.4)**
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz
 ```
 
 ### Method 2: Zig Fetch (Main Branch)
@@ -146,7 +146,7 @@ zig fetch --save git+https://github.com/muhammad-fiaz/brotli.zig.git
 ```zig
 .dependencies = .{
     .brotli = .{
-        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz",
         .hash = "...", // Run `zig fetch --save <url>` to generate the hash.
     },
 },

@@ -1,4 +1,4 @@
-﻿---
+---
 title: API Reference
 description: Complete brotli.zig API surface.
 ---
@@ -76,9 +76,9 @@ Upper bound for output allocation (mirrors `BrotliEncoderMaxCompressedSize`).
 ## Version
 
 ```zig
-brotli.version        // "0.0.3"
+brotli.version        // "0.0.4"
 brotli.versionNumber() // 2
-brotli.versionString() // "0.0.3"
+brotli.versionString() // "0.0.4"
 ```
 
 ## Constants

@@ -1,4 +1,4 @@
-﻿---
+---
 title: Format Introspection
 description: Version, quality bounds, window sizes, and format constants.
 ---
@@ -36,7 +36,7 @@ pub fn main() void {
 ## Output
 
 ```text
-library version : 0.0.3 (3)
+library version : 0.0.3 (4)
 format spec     : 1.2.0
 quality range   : 0..11 (default 11)
 window bits     : 10..24 (large: up to 30)
@@ -47,7 +47,7 @@ distance shorts : 16
 
 ## Explanation
 
-- `versionString()` returns the human-readable `"0.0.3"`;
+- `versionString()` returns the human-readable `"0.0.4"`;
   `versionNumber()` returns the encoded integer `2` (major &lt;&lt; 24 |
   minor &lt;&lt; 12 | patch).
 - `spec_version` is the Brotli format specification version this library

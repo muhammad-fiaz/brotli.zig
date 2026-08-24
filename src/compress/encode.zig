@@ -13,6 +13,7 @@ const constants = @import("../common/constants.zig");
 const context = @import("../common/context.zig");
 const dictionary = @import("../dictionary/dictionary.zig");
 const static_dict = @import("static_dict.zig");
+const prefix_ranges = @import("../common/prefix_ranges.zig");
 
 pub const Mode = enum(u3) {
     generic = 0,
@@ -233,6 +234,8 @@ const PlannedCommand = struct {
 
 /// Maximum literal trees the context-modeling clusterer will emit.
 const MAX_LIT_TREES = 8;
+/// Maximum distinct literal block types the splitter may emit.
+const MAX_LIT_BLOCK_TYPES = 8;
 /// Minimum estimated saving (bits) required to merge two context clusters.
 const CLUSTER_MIN_SAVING = 512.0;
 
@@ -243,6 +246,179 @@ const CtxPlan = struct {
     cmap: [64]u8 = @splat(0),
     ntrees: u32 = 1,
 };
+
+/// A contiguous run of literals within the metablock output.
+pub const LitRun = struct { off: u32, len: u32 };
+
+/// Block-length prefix code lookup, mirroring the decoder's range table.
+fn blockLengthPrefixCode(len: u32) u8 {
+    var code: u8 = if (len >= 177)
+        (if (len >= 753) @as(u8, 20) else @as(u8, 14))
+    else
+        (if (len >= 41) @as(u8, 7) else @as(u8, 0));
+    while (code < constants.NUM_BLOCK_LEN_SYMBOLS - 1 and
+        len >= prefix_ranges.prefix_code_ranges[code + 1].offset)
+    {
+        code += 1;
+    }
+    return code;
+}
+
+/// Block-type switch code calculator mirroring the format's ring of the two
+/// most recent block types.
+const SwitchCalc = struct { last: u32 = 1, second: u32 = 0 };
+
+fn nextBlockTypeCode(calc: *SwitchCalc, t: u32) u16 {
+    const code: u16 = if (t == calc.last + 1)
+        1
+    else if (t == calc.second) 0 else @intCast(t + 2);
+    calc.second = calc.last;
+    calc.last = t;
+    return code;
+}
+
+/// Everything needed to emit one category's block-switch machinery.
+pub const SwitchTables = struct {
+    ntypes: u32,
+    /// Borrowed per-literal type ids.
+    types_blk: []const u8,
+    /// Distinct-type run lengths, ordered.
+    types: [MAX_LIT_BLOCK_TYPES]u8 = undefined,
+    seg_lens: [MAX_LIT_BLOCK_TYPES]u32 = undefined,
+    seg_idx: usize = 1,
+    type_freq: [MAX_LIT_BLOCK_TYPES + 2]u32 = @splat(0),
+    len_freq: [constants.NUM_BLOCK_LEN_SYMBOLS]u32 = @splat(0),
+    type_depths: [MAX_LIT_BLOCK_TYPES + 2]u8 = undefined,
+    type_codes: [MAX_LIT_BLOCK_TYPES + 2]u16 = undefined,
+    len_depths: [constants.NUM_BLOCK_LEN_SYMBOLS]u8 = undefined,
+    len_codes: [constants.NUM_BLOCK_LEN_SYMBOLS]u16 = undefined,
+
+    pub fn finishTables(self: *SwitchTables) void {
+        var calc = SwitchCalc{};
+        var i: usize = 0;
+        while (i < self.ntypes) : (i += 1) {
+            const tc = nextBlockTypeCode(&calc, self.types[i]);
+            if (i != 0) self.type_freq[tc] += 1;
+            self.len_freq[blockLengthPrefixCode(self.seg_lens[i])] += 1;
+        }
+        huff_enc.generateCodeLengths(&self.type_freq, huff_enc.MAX_CODE_LENGTH, &self.type_depths);
+        huff_enc.assignCanonicalCodes(&self.type_depths, &self.type_codes);
+        huff_enc.generateCodeLengths(&self.len_freq, huff_enc.MAX_CODE_LENGTH, &self.len_depths);
+        huff_enc.assignCanonicalCodes(&self.len_depths, &self.len_codes);
+    }
+};
+
+/// Plans a literal-block segmentation over the literal stream described by
+/// `runs`. Tries equal-count splits, keeps the cheapest by an entropy plus
+/// switch-overhead estimate, then greedily merges statistically similar
+/// neighbours. Writes one segment id per literal into `seg_of` and returns
+/// the segment count (1 when splitting does not pay).
+fn planLiteralSegments(
+    data: []const u8,
+    runs: []const LitRun,
+    seg_of: []u8,
+) u32 {
+    const total: usize = seg_of.len;
+    if (total < 1024) {
+        @memset(seg_of, 0);
+        return 1;
+    }
+    var best_k: u32 = 1;
+    var best_cost: f64 = blk: {
+        var all: [256]u32 = @splat(0);
+        for (runs) |r| {
+            for (data[r.off..][0..r.len]) |b| all[b] += 1;
+        }
+        break :blk histEntropy(&all);
+    };
+    const candidates = [_]u32{ 2, 4, 8 };
+    for (candidates) |k| {
+        var hists: [MAX_LIT_BLOCK_TYPES][256]u32 = @splat(@splat(0));
+        var counts: [MAX_LIT_BLOCK_TYPES]usize = @splat(0);
+        const per: usize = total / k;
+        var li: usize = 0;
+        for (runs) |r| {
+            for (data[r.off..][0..r.len]) |b| {
+                const s = @min(k - 1, @as(u32, @intCast(li / per)));
+                hists[s][b] += 1;
+                counts[s] += 1;
+                li += 1;
+            }
+        }
+        // Total-bit costs on both sides of the comparison.
+        var cost: f64 = @as(f64, @floatFromInt(k - 1)) * 16.0 +
+            @as(f64, @floatFromInt(k)) * 60.0;
+        for (hists[0..k]) |*h| cost += histEntropy(h);
+        if (cost + 400.0 < best_cost) {
+            best_cost = cost;
+            best_k = k;
+        }
+    }
+    if (best_k == 1) {
+        @memset(seg_of, 0);
+        return 1;
+    }
+    const per: usize = total / best_k;
+    var li: usize = 0;
+    for (runs) |r| {
+        for (data[r.off..][0..r.len]) |_| {
+            seg_of[li] = @intCast(@min(best_k - 1, li / per));
+            li += 1;
+        }
+    }
+    // Greedy adjacent merge of statistically similar neighbours.
+    var merged: u32 = best_k;
+    var s: u32 = 0;
+    while (s + 1 < merged) {
+        var ha: [256]u32 = @splat(0);
+        var hb: [256]u32 = @splat(0);
+        var ca: usize = 0;
+        var cb: usize = 0;
+        var idx: usize = 0;
+        for (runs) |r| {
+            for (data[r.off..][0..r.len]) |bb| {
+                if (seg_of[idx] == s) {
+                    ha[bb] += 1;
+                    ca += 1;
+                } else if (seg_of[idx] == s + 1) {
+                    hb[bb] += 1;
+                    cb += 1;
+                }
+                idx += 1;
+            }
+        }
+        if (ca == 0 or cb == 0) break;
+        var both = ha;
+        for (&both, hb) |*d, sv| d.* += sv;
+        const gain = histEntropy(&ha) + histEntropy(&hb) - histEntropy(&both);
+        if (gain >= 96.0) {
+            for (seg_of) |*sid| {
+                if (sid.* > s) sid.* -= 1;
+            }
+            merged -= 1;
+            continue;
+        }
+        s += 1;
+    }
+    return merged;
+}
+
+fn buildSwitchTables(type_of: []const u8) SwitchTables {
+    var st = SwitchTables{ .ntypes = 0, .types_blk = type_of };
+    var prev: ?u8 = null;
+    for (st.types_blk) |t| {
+        if (prev == null or t != prev.?) {
+            st.types[st.ntypes] = t;
+            st.seg_lens[st.ntypes] = 1;
+            st.ntypes += 1;
+            prev = t;
+        } else {
+            st.seg_lens[st.ntypes - 1] += 1;
+        }
+    }
+    st.finishTables();
+    return st;
+}
 
 pub const Encoder = struct {
     allocator: std.mem.Allocator,
@@ -747,6 +923,7 @@ pub const Encoder = struct {
             &lit_tree_freq,
             1,
             null,
+            null,
             &ic_freq,
             &dist_freq,
             &planned,
@@ -955,50 +1132,103 @@ pub const Encoder = struct {
         }
         const data = self.buf.items[self.consumed .. self.consumed + mlen];
 
-        // Literal context modeling: per-context histograms, greedy
-        // clustering into at most MAX_LIT_TREES literal trees, gated on an
-        // estimated win over the single-tree layout.
+        // Literal layout selection: plain single tree, second-order context
+        // modeling, or literal block switching (each block type gets its own
+        // tree through an identity context map). All candidates are measured
+        // exactly and the cheapest wins.
         var cm: ?CtxPlan = null;
+        var split: ?SwitchTables = null;
         {
             var literal_count: usize = 0;
-            for (planned) |p| literal_count += p.insert_len;
-            const cm_wanted = !self.options.disable_literal_context_modeling and
+            for (planned[0..used]) |p| literal_count += p.insert_len;
+            const want_cm = !self.options.disable_literal_context_modeling and
                 self.options.quality >= 4 and mlen >= 128 and literal_count >= 256;
-            if (cm_wanted) {
+            const want_split = !self.options.disable_literal_context_modeling and
+                self.options.quality >= 4 and mlen >= 2048 and literal_count >= 1024;
+
+            // Plain baseline measurement.
+            var all: [256]u32 = @splat(0);
+            for (data) |b| all[b] += 1;
+            const pm = measureTreeBits(&all, 256);
+            var best_layout: enum { plain, cm_w, split_w } = .plain;
+            var best_bits: usize = pm.stored + pm.payload;
+            var cm_cand: ?CtxPlan = null;
+            var split_cand: ?SwitchTables = null;
+
+            if (want_cm) {
                 const mode = chooseContextMode(data, self.options.quality);
                 var ctx_hist: [64][256]u32 = @splat(@splat(0));
                 buildContextHistograms(data, mode, self.p1, self.p2, &ctx_hist);
-
                 var plan = CtxPlan{ .mode = mode };
                 clusterContexts(&ctx_hist, &lit_tree_freq, &plan.cmap, &plan.ntrees);
-
-                // Exact comparison: stored tree bytes plus weighted literal
-                // payload for both layouts, with a bounded context-map
-                // allowance; keep modeling only when it pays for itself.
-                var split_bits: usize = 0;
-                {
-                    var t: usize = 0;
-                    while (t < plan.ntrees) : (t += 1) {
-                        const m = measureTreeBits(&lit_tree_freq[t], 256);
-                        split_bits += m.stored + m.payload;
-                    }
+                var bits: usize = sizeOfContextMapBits(&plan.cmap) * 4 + 16 + plan.ntrees * 8;
+                var t: usize = 0;
+                while (t < plan.ntrees) : (t += 1) {
+                    const m = measureTreeBits(&lit_tree_freq[t], 256);
+                    bits += m.stored + m.payload;
                 }
-                var all: [256]u32 = @splat(0);
-                for (data) |b| all[b] += 1;
-                const pm = measureTreeBits(&all, 256);
-                const plain_bits = pm.stored + pm.payload;
-                const overhead: usize =
-                    sizeOfContextMapBits(&plan.cmap) * 4 + 16 + plan.ntrees * 8;
-                if (split_bits + overhead < plain_bits) {
-                    cm = plan;
-                } else {
-                    // Reset merged histograms before the plain layout.
-                    var tt: usize = 0;
-                    while (tt < MAX_LIT_TREES) : (tt += 1) lit_tree_freq[tt] = @splat(0);
+                if (bits < best_bits) {
+                    best_bits = bits;
+                    best_layout = .cm_w;
+                    cm_cand = plan;
                 }
             }
-            if (cm == null) {
-                for (data) |b| lit_tree_freq[0][b] += 1;
+
+            if (want_split) {
+                var runs: std.ArrayList(LitRun) = .empty;
+                defer runs.deinit(alloc);
+                var run_off: usize = 0;
+                for (planned[0..used]) |p| {
+                    if (p.insert_len != 0) {
+                        runs.append(alloc, .{
+                            .off = @intCast(run_off),
+                            .len = p.insert_len,
+                        }) catch break;
+                    }
+                    run_off += p.insert_len + p.copy_len;
+                }
+                if (runs.items.len != 0) {
+                    const seg_of = alloc.alloc(u8, literal_count) catch return false;
+                    defer alloc.free(seg_of);
+                    const k = planLiteralSegments(data, runs.items, seg_of);
+                    if (k > 1) {
+                        var seg_hist: [MAX_LIT_BLOCK_TYPES][256]u32 = @splat(@splat(0));
+                        {
+                            var li: usize = 0;
+                            for (runs.items) |r| {
+                                for (data[r.off..][0..r.len]) |b| {
+                                    seg_hist[seg_of[li]][b] += 1;
+                                    li += 1;
+                                }
+                            }
+                        }
+                        for (&lit_tree_freq) |*t| t.* = @splat(0);
+                        var t: usize = 0;
+                        while (t < k) : (t += 1) lit_tree_freq[t] = seg_hist[t];
+                        var st = buildSwitchTables(seg_of);
+                        // Switch codes plus the identity context map cost.
+                        var bits: usize = @as(usize, k - 1) * 16 + k * 60 + k * 8;
+                        t = 0;
+                        while (t < k) : (t += 1) {
+                            const m = measureTreeBits(&lit_tree_freq[t], 256);
+                            bits += m.stored + m.payload;
+                        }
+                        if (bits + 1500 < best_bits) {
+                            best_bits = bits;
+                            best_layout = .split_w;
+                            split_cand = st;
+                            _ = &st;
+                        }
+                    }
+                }
+            }
+
+            switch (best_layout) {
+                .cm_w => cm = cm_cand,
+                .split_w => split = split_cand,
+                .plain => {
+                    for (data) |b| lit_tree_freq[0][b] += 1;
+                },
             }
         }
 
@@ -1018,11 +1248,13 @@ pub const Encoder = struct {
             return false;
         }
 
+        const ntrees_final: u32 = if (split) |s| s.ntypes else if (cm) |c| c.ntrees else 1;
         try self.serializeCompressed(
             is_last,
             &lit_tree_freq,
-            if (cm) |*c| c.ntrees else 1,
+            ntrees_final,
             if (cm) |c| c else null,
+            split,
             &ic_freq,
             &dist_freq,
             planned[0..used],
@@ -1039,16 +1271,55 @@ pub const Encoder = struct {
         lit_tree_freq: *const [MAX_LIT_TREES][256]u32,
         ntrees_lit: u32,
         cm: ?CtxPlan,
+        split_param: ?SwitchTables,
         ic_freq: *const [704]u32,
         dist_freq: *const [DIST_ALPHABET_MAX]u32,
         planned: []const PlannedCommand,
         data: []const u8,
     ) !void {
+        var split = split_param;
         var cl_scratch: [18]u8 = undefined;
 
         // The ISUNCOMPRESSED bit exists only in non-final metablocks.
         if (!is_last) self.w.put(1, 0);
-        self.w.put(1, 0); // NBLTYPESL = 1
+
+        var sw_type_depths: [MAX_LIT_BLOCK_TYPES + 2]u8 = undefined;
+        var sw_type_codes: [MAX_LIT_BLOCK_TYPES + 2]u16 = undefined;
+        var sw_len_depths: [constants.NUM_BLOCK_LEN_SYMBOLS]u8 = undefined;
+        var sw_len_codes: [constants.NUM_BLOCK_LEN_SYMBOLS]u16 = undefined;
+
+        // Literal category: block count and its switch machinery when more
+        // than one block type is present. The initial type zero is implicit,
+        // so only the initial block length is coded here.
+        if (split) |*s| {
+            try self.putVarLenUint8(s.ntypes - 1);
+            huff_enc.storeHuffmanTree(
+                &self.w,
+                s.type_freq[0 .. s.ntypes + 2],
+                s.ntypes + 2,
+                s.ntypes + 2,
+                &sw_type_depths,
+                &sw_type_codes,
+                cl_scratch[0..],
+            );
+            huff_enc.storeHuffmanTree(
+                &self.w,
+                &s.len_freq,
+                constants.NUM_BLOCK_LEN_SYMBOLS,
+                constants.NUM_BLOCK_LEN_SYMBOLS,
+                &sw_len_depths,
+                &sw_len_codes,
+                cl_scratch[0..],
+            );
+            const lc0 = blockLengthPrefixCode(s.seg_lens[0]);
+            self.w.putBits(@intCast(sw_len_depths[lc0]), sw_len_codes[lc0]);
+            self.w.putBits(
+                @intCast(prefix_ranges.prefix_code_ranges[lc0].nbits),
+                s.seg_lens[0] - prefix_ranges.prefix_code_ranges[lc0].offset,
+            );
+        } else {
+            self.w.put(1, 0); // NBLTYPESL = 1
+        }
         self.w.put(1, 0); // NBLTYPESI = 1
         self.w.put(1, 0); // NBLTYPESD = 1
 
@@ -1058,13 +1329,23 @@ pub const Encoder = struct {
             self.w.put(6, @as(u64, self.npostfix) | (@as(u64, nd_raw) << 2));
         }
 
-        // Context mode for the single literal block type.
-        const mode_val: u64 = if (cm) |c| @intFromEnum(c.mode) else 0;
-        self.w.put(2, mode_val);
+        // One two-bit context mode per literal block type.
+        {
+            const mode_val: u64 = if (cm) |c| @intFromEnum(c.mode) else 0;
+            const ntypes: usize = if (split) |s| @intCast(s.ntypes) else 1;
+            var t: usize = 0;
+            while (t < ntypes) : (t += 1) self.w.put(2, mode_val);
+        }
 
-        // Literal tree count and, when modeled, its context map.
+        // Literal tree count and context map. With splitting active the map
+        // is the identity over each type's 64-context slot, which RLE-codes
+        // compactly; with modeling it is the clustered assignment.
         try self.putVarLenUint8(ntrees_lit - 1);
-        if (ntrees_lit > 1) {
+        if (split) |s| {
+            var ident: [MAX_LIT_BLOCK_TYPES * 64]u8 = undefined;
+            for (&ident, 0..) |*e, i| e.* = @intCast(i / 64);
+            try self.emitLiteralContextMap(ident[0 .. @as(usize, s.ntypes) * 64], ntrees_lit);
+        } else if (ntrees_lit > 1) {
             try self.emitLiteralContextMap(cm.?.cmap[0..], cm.?.ntrees);
         }
 
@@ -1121,6 +1402,9 @@ pub const Encoder = struct {
         // decoder reconstructs it from its ring buffer.
         var p1 = self.p1;
         var p2 = self.p2;
+        var lit_remaining: u32 = if (split) |s| s.seg_lens[0] else 0;
+        var sw_calc = SwitchCalc{};
+        var cur_type: u8 = 0;
         var lit_pos: usize = 0;
         for (planned) |p| {
             self.w.putBits(@intCast(ic_depths[p.sym]), ic_codes[p.sym]);
@@ -1137,9 +1421,25 @@ pub const Encoder = struct {
 
             var li: usize = 0;
             while (li < p.insert_len) : (li += 1) {
+                if (lit_remaining == 0 and split != null) {
+                    const s = &split.?;
+                    const t_new: u32 = s.types[s.seg_idx];
+                    const tc = nextBlockTypeCode(&sw_calc, t_new);
+                    self.w.putBits(@intCast(s.type_depths[tc]), s.type_codes[tc]);
+                    const lc = blockLengthPrefixCode(s.seg_lens[s.seg_idx]);
+                    self.w.putBits(@intCast(sw_len_depths[lc]), sw_len_codes[lc]);
+                    self.w.putBits(
+                        @intCast(prefix_ranges.prefix_code_ranges[lc].nbits),
+                        s.seg_lens[s.seg_idx] - prefix_ranges.prefix_code_ranges[lc].offset,
+                    );
+                    lit_remaining = s.seg_lens[s.seg_idx];
+                    cur_type = @intCast(t_new);
+                    s.seg_idx += 1;
+                }
+                lit_remaining -|= 1;
                 const b = data[lit_pos];
                 lit_pos += 1;
-                const t = tree_of(cm, p1, p2);
+                const t: usize = if (split != null) cur_type else tree_of(cm, p1, p2);
                 self.w.putBits(@intCast(lit_depths[t][b]), lit_codes[t][b]);
                 p2 = p1;
                 p1 = b;

@@ -1,4 +1,4 @@
-﻿---
+---
 title: Getting Started
 description: Get up and running with brotli.zig in minutes.
 ---
@@ -21,7 +21,7 @@ Add brotli.zig to your `build.zig.zon`:
 
 ```zig
 .brotli = .{
-    .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz",
+    .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz",
     .hash = "...",  // use zig fetch --save to get the hash
 },
 ```

@@ -1,4 +1,4 @@
-﻿---
+---
 title: Constants
 description: Format constants, limits, and version info exposed by brotli.zig.
 ---
@@ -52,12 +52,12 @@ pub const WINDOW_GAP = 16;
 ## Version
 
 ```zig
-pub const version = "0.0.3";
+pub const version = "0.0.4";
 pub const version_number: u32 = 2;
 pub const spec_version = "1.2.0";       // implemented format spec level
 pub const spec_version_number: u32 = 10200;
 
-pub fn versionString() []const u8 // "0.0.3"
+pub fn versionString() []const u8 // "0.0.4"
 pub fn versionNumber() u32        // 2
 ```
 

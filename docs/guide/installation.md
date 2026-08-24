@@ -1,4 +1,4 @@
-﻿---
+---
 title: Installation
 description: How to install and set up brotli.zig in your Zig project.
 ---
@@ -21,7 +21,7 @@ This library requires **Zig 0.16.0** as declared in `build.zig.zon` (`minimum_zi
 ### Method 1: Zig Fetch (Recommended) â€” Latest Release
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz
 ```
 
 This corresponds to `build.zig.zon` version `0.0.3`:
@@ -29,7 +29,7 @@ This corresponds to `build.zig.zon` version `0.0.3`:
 ```zig
 .{
     .name = .brotli,
-    .version = "0.0.3",
+    .version = "0.0.4",
     .minimum_zig_version = "0.16.0",
     // ...
 }
@@ -50,7 +50,7 @@ Add the dependency to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .brotli = .{
-        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz",
         .hash = "...", // Run `zig fetch --save <url>` to generate the hash.
     },
 },
