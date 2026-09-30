@@ -46,28 +46,29 @@ pub const ProgressCallback = *const fn (
 
 pub const Options = struct {
     quality: u32 = 11,
-    lgwin: u32 = 22,
+    lgWin: u32 = 22,
     mode: Mode = .generic,
-    lgblock: u32 = 0,
-    disable_literal_context_modeling: bool = false,
-    size_hint: usize = 0,
-    large_window: bool = false,
-    npostfix: u32 = 0,
-    ndirect: u32 = 0,
+    lgBlock: u32 = 0,
+    disableLiteralContextModeling: bool = false,
+    sizeHint: usize = 0,
+    largeWindow: bool = false,
+    nPostfix: u32 = 0,
+    nDirect: u32 = 0,
+    customDictionary: ?[]const u8 = null,
     progress: ?ProgressCallback = null,
-    progress_ctx: ?*anyopaque = null,
+    progressCtx: ?*anyopaque = null,
 };
 
 /// Parameter identifiers, mirroring the C enumeration values.
-pub const PARAM_MODE = 0;
-pub const PARAM_QUALITY = 1;
-pub const PARAM_LGWIN = 2;
-pub const PARAM_LGBLOCK = 3;
-pub const PARAM_DISABLE_LITERAL_CONTEXT_MODELING = 4;
-pub const PARAM_SIZE_HINT = 5;
-pub const PARAM_LARGE_WINDOW = 6;
-pub const PARAM_NPOSTFIX = 7;
-pub const PARAM_NDIRECT = 8;
+pub const paramMode: u32 = 0;
+pub const paramQuality: u32 = 1;
+pub const paramLgWin: u32 = 2;
+pub const paramLgBlock: u32 = 3;
+pub const paramDisableLiteralContextModeling: u32 = 4;
+pub const paramSizeHint: u32 = 5;
+pub const paramLargeWindow: u32 = 6;
+pub const paramNPostfix: u32 = 7;
+pub const paramNDirect: u32 = 8;
 
 const MAX_MLEN = 1 << 24;
 const WINDOW_GAP = 16;
@@ -78,25 +79,25 @@ const LARGE_MAX_WINDOW = constants.LARGE_MAX_WBITS;
 const DIST_ALPHABET_MAX = 544;
 
 fn effectiveWindow(opts: Options) u32 {
-    var w = opts.lgwin;
+    var w = opts.lgWin;
     if (w < MIN_WINDOW) w = MIN_WINDOW;
-    const cap: u32 = if (opts.large_window) LARGE_MAX_WINDOW else MAX_WINDOW;
+    const cap: u32 = if (opts.largeWindow) LARGE_MAX_WINDOW else MAX_WINDOW;
     if (w > cap) w = cap;
     return w;
 }
 
-/// Normalizes NPOSTFIX/NDIRECT the way the format requires: the four-bit
-/// header field carries NDIRECT >> NPOSTFIX, so NDIRECT stays within
-/// 15 << NPOSTFIX and is a multiple of the postfix multiplier.
+/// Normalizes nPostfix/nDirect the way the format requires: the four-bit
+/// header field carries nDirect >> nPostfix, so nDirect stays within
+/// 15 << nPostfix and is a multiple of the postfix multiplier.
 fn sanitizeDistanceParams(opts: *Options) void {
-    if (opts.npostfix > constants.MAX_NPOSTFIX) opts.npostfix = constants.MAX_NPOSTFIX;
-    const mult = @as(u32, 1) << @intCast(opts.npostfix);
+    if (opts.nPostfix > constants.MAX_NPOSTFIX) opts.nPostfix = constants.MAX_NPOSTFIX;
+    const mult = @as(u32, 1) << @intCast(opts.nPostfix);
     const max_nd = @as(u32, 15) * mult;
-    var nd = opts.ndirect;
+    var nd = opts.nDirect;
     if (nd > max_nd) nd = max_nd;
-    if (opts.ndirect > constants.MAX_NDIRECT) opts.ndirect = constants.MAX_NDIRECT;
+    if (opts.nDirect > constants.MAX_NDIRECT) opts.nDirect = constants.MAX_NDIRECT;
     nd -= nd % mult;
-    opts.ndirect = nd;
+    opts.nDirect = nd;
 }
 
 fn qualityParams(q: u32) lz77.Params {
@@ -467,11 +468,11 @@ pub const Encoder = struct {
 
     fn refreshDistParams(self: *Encoder) void {
         sanitizeDistanceParams(&self.options);
-        self.npostfix = self.options.npostfix;
-        self.ndirect = self.options.ndirect;
+        self.npostfix = self.options.nPostfix;
+        self.ndirect = self.options.nDirect;
         const np = self.npostfix;
         const nd = self.ndirect;
-        if (self.options.large_window) {
+        if (self.options.largeWindow) {
             const lim = constants.calculateDistanceCodeLimit(
                 constants.MAX_ALLOWED_DISTANCE,
                 np,
@@ -503,6 +504,9 @@ pub const Encoder = struct {
             (@as(usize, 1) << @intCast(e.window_bits)) - WINDOW_GAP;
         e.match_max_dist = e.max_backward;
         e.refreshDistParams();
+        if (opts.customDictionary) |d| {
+            _ = e.attachDictionary(d);
+        }
         return e;
     }
 
@@ -515,6 +519,53 @@ pub const Encoder = struct {
             self.allocator.destroy(l);
             self.static_lut = null;
         }
+    }
+
+    /// Resets the encoder state for a new stream, reusing allocated buffers and lookup tables.
+    pub fn reset(self: *Encoder, options: ?Options) void {
+        if (options) |opts| {
+            var o = opts;
+            sanitizeDistanceParams(&o);
+            self.options = o;
+            self.window_bits = effectiveWindow(o);
+            self.max_backward = (@as(usize, 1) << @intCast(self.window_bits)) - WINDOW_GAP;
+            self.match_max_dist = self.max_backward;
+            self.refreshDistParams();
+        }
+        self.buf.clearRetainingCapacity();
+        self.consumed = 0;
+        self.out.clearRetainingCapacity();
+        self.out_pos = 0;
+        self.bitbuf.clearRetainingCapacity();
+        self.w = .{ .buf = &.{} };
+        self.rb = .{};
+        self.started = false;
+        self.finished_ = false;
+        self.failed = false;
+        self.input_total_seen = 0;
+        self.custom_dict = &.{};
+        self.dict_applied = false;
+        self.dict_seeded = false;
+        self.dict_front_idx = 0;
+        self.stream_pos = 0;
+        self.p1 = 0;
+        self.p2 = 0;
+        if (self.options.customDictionary) |d| {
+            _ = self.attachDictionary(d);
+        }
+    }
+
+    /// Compresses a slice of input and returns an allocated output slice.
+    pub fn compress(self: *Encoder, input: []const u8) ![]u8 {
+        self.reset(null);
+        self.options.sizeHint = input.len;
+        try self.compressStream(.process, input);
+        try self.compressStream(.finish, null);
+        const n = self.out.items.len - self.out_pos;
+        const result = try self.allocator.alloc(u8, n);
+        @memcpy(result, self.out.items[self.out_pos..]);
+        self.out_pos = self.out.items.len;
+        return result;
     }
 
     /// Builds the built-in-dictionary match index when quality permits.
@@ -530,34 +581,34 @@ pub const Encoder = struct {
 
     pub fn setParameter(self: *Encoder, id: u32, value: u32) bool {
         switch (id) {
-            PARAM_MODE => self.options.mode = Mode.fromInt(value),
-            PARAM_QUALITY => self.options.quality = @min(value, 11),
-            PARAM_LGWIN => {
-                self.options.lgwin = value;
+            paramMode => self.options.mode = Mode.fromInt(value),
+            paramQuality => self.options.quality = @min(value, 11),
+            paramLgWin => {
+                self.options.lgWin = value;
                 self.window_bits = effectiveWindow(self.options);
                 self.max_backward =
                     (@as(usize, 1) << @intCast(self.window_bits)) - WINDOW_GAP;
                 self.match_max_dist = self.max_backward;
             },
-            PARAM_LGBLOCK => self.options.lgblock = value,
-            PARAM_DISABLE_LITERAL_CONTEXT_MODELING => {
-                self.options.disable_literal_context_modeling = value != 0;
+            paramLgBlock => self.options.lgBlock = value,
+            paramDisableLiteralContextModeling => {
+                self.options.disableLiteralContextModeling = value != 0;
             },
-            PARAM_SIZE_HINT => self.options.size_hint = value,
-            PARAM_LARGE_WINDOW => {
-                self.options.large_window = value != 0;
+            paramSizeHint => self.options.sizeHint = value,
+            paramLargeWindow => {
+                self.options.largeWindow = value != 0;
                 self.window_bits = effectiveWindow(self.options);
                 self.max_backward =
                     (@as(usize, 1) << @intCast(self.window_bits)) - WINDOW_GAP;
                 self.match_max_dist = self.max_backward;
                 self.refreshDistParams();
             },
-            PARAM_NPOSTFIX => {
-                self.options.npostfix = value;
+            paramNPostfix => {
+                self.options.nPostfix = value;
                 self.refreshDistParams();
             },
-            PARAM_NDIRECT => {
-                self.options.ndirect = value;
+            paramNDirect => {
+                self.options.nDirect = value;
                 self.refreshDistParams();
             },
             else => return false,
@@ -567,16 +618,16 @@ pub const Encoder = struct {
 
     pub fn setProgress(self: *Encoder, cb: ?ProgressCallback, ctx: ?*anyopaque) void {
         self.options.progress = cb;
-        self.options.progress_ctx = ctx;
+        self.options.progressCtx = ctx;
     }
 
     fn reportProgress(self: *Encoder) void {
         const cb = self.options.progress orelse return;
-        cb(self.options.progress_ctx, self.consumed, self.totalTarget());
+        cb(self.options.progressCtx, self.consumed, self.totalTarget());
     }
 
     fn totalTarget(self: *Encoder) usize {
-        if (self.options.size_hint != 0) return self.options.size_hint;
+        if (self.options.sizeHint != 0) return self.options.sizeHint;
         return self.input_total_seen;
     }
 
@@ -802,7 +853,7 @@ pub const Encoder = struct {
         try self.reserve(16);
 
         const wb = self.window_bits;
-        if (self.options.large_window) {
+        if (self.options.largeWindow) {
             // Large-window marker: `1`, `000`, `001`, reserved zero, then six
             // window bits — 14 bits total.
             self.w.put(1, 1);
@@ -893,8 +944,8 @@ pub const Encoder = struct {
 
     fn emitAllLiterals(self: *Encoder, mlen: usize) !void {
         var lit_tree_freq: [MAX_LIT_TREES][256]u32 = @splat(@splat(0));
-        var ic_freq = [_]u32{0} ** 704;
-        var dist_freq = [_]u32{0} ** DIST_ALPHABET_MAX;
+        var ic_freq: [704]u32 = @splat(0);
+        var dist_freq: [DIST_ALPHABET_MAX]u32 = @splat(0);
 
         // A single literals-only command; the decoder finishes the metablock
         // right after the insert run, so no copy or distance is consumed.
@@ -947,8 +998,8 @@ pub const Encoder = struct {
         if (cmds.items.len == 0) return false;
 
         var lit_tree_freq: [MAX_LIT_TREES][256]u32 = @splat(@splat(0));
-        var ic_freq = [_]u32{0} ** 704;
-        var dist_freq = [_]u32{0} ** DIST_ALPHABET_MAX;
+        var ic_freq: [704]u32 = @splat(0);
+        var dist_freq: [DIST_ALPHABET_MAX]u32 = @splat(0);
 
         const planned = try alloc.alloc(PlannedCommand, cmds.items.len + 1);
         defer alloc.free(planned);
@@ -1081,7 +1132,7 @@ pub const Encoder = struct {
                     break;
                 };
                 if (dc.sym >= self.dist_alphabet_limit or
-                    (!self.options.large_window and dc.nbits > constants.MAX_DISTANCE_BITS))
+                    (!self.options.largeWindow and dc.nbits > constants.MAX_DISTANCE_BITS))
                 {
                     ok = false;
                     break;
@@ -1141,9 +1192,9 @@ pub const Encoder = struct {
         {
             var literal_count: usize = 0;
             for (planned[0..used]) |p| literal_count += p.insert_len;
-            const want_cm = !self.options.disable_literal_context_modeling and
+            const want_cm = !self.options.disableLiteralContextModeling and
                 self.options.quality >= 4 and mlen >= 128 and literal_count >= 256;
-            const want_split = !self.options.disable_literal_context_modeling and
+            const want_split = !self.options.disableLiteralContextModeling and
                 self.options.quality >= 4 and mlen >= 2048 and literal_count >= 1024;
 
             // Plain baseline measurement.
@@ -1331,7 +1382,7 @@ pub const Encoder = struct {
 
         // One two-bit context mode per literal block type.
         {
-            const mode_val: u64 = if (cm) |c| @intFromEnum(c.mode) else 0;
+            const mode_val: u64 = if (cm) |c| @backingInt(c.mode) else 0;
             const ntypes: usize = if (split) |s| @intCast(s.ntypes) else 1;
             var t: usize = 0;
             while (t < ntypes) : (t += 1) self.w.put(2, mode_val);
@@ -1856,6 +1907,41 @@ fn clusterContexts(
     }
     cmap.* = map;
     ntrees_out.* = @max(1, @as(u32, @intCast(used)));
+}
+
+/// Upper bound on compressed size for a given input size.
+pub fn maxCompressedSize(input_size: usize) usize {
+    if (input_size == 0) return 2;
+    const num_large_blocks = input_size >> 14;
+    const overhead = 2 + 4 * num_large_blocks + 4;
+    const result = input_size +% overhead;
+    if (result < input_size) return 0;
+    return result;
+}
+
+/// Compress a complete byte slice in one call with default options.
+pub fn compress(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    return compressWithOptions(allocator, input, .{});
+}
+
+/// Compress a complete byte slice in one call with explicit options.
+pub fn compressWithOptions(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    options: Options,
+) ![]u8 {
+    var enc = Encoder.init(allocator, options);
+    defer enc.deinit();
+    enc.options.sizeHint = input.len;
+
+    enc.compressStream(.process, input) catch return error.BrotliCompressionError;
+    enc.compressStream(.finish, null) catch return error.BrotliCompressionError;
+
+    const n = enc.out.items.len - enc.out_pos;
+    const result = try allocator.alloc(u8, n);
+    @memcpy(result, enc.out.items[enc.out_pos..]);
+    enc.out_pos = enc.out.items.len;
+    return result;
 }
 
 const testing = std.testing;

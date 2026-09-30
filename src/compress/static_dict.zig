@@ -42,7 +42,7 @@ fn strSlice(id: usize) []const u8 {
 }
 
 fn typeAt(ti: usize) transforms.TransformType {
-    return @enumFromInt(tables.transforms_data[ti * 3 + 1]);
+    return @fromBackingInt(@intCast(tables.transforms_data[ti * 3 + 1]));
 }
 
 /// Resolves the transform whose (prefix, type, suffix) triple matches, or
@@ -387,7 +387,7 @@ const cutoffIds: [10]?u16 = blk: {
     var ids: [10]?u16 = @splat(null);
     var n: u32 = 2;
     while (n <= 9) : (n += 1) {
-        const tt: transforms.TransformType = @enumFromInt(n);
+        const tt: transforms.TransformType = @fromBackingInt(@intCast(n));
         ids[n] = tIdOrNull("", tt, "");
     }
     break :blk ids;

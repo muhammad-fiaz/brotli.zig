@@ -30,7 +30,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
 
     var sc = brotli.StreamingCompressor.init(allocator, .{
         .quality = 9,
-        .lgwin = 22,
+        .lgWin = 22,
     });
     defer sc.deinit();
 
@@ -62,7 +62,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
         fed += chunk.len;
     }
 
-    const tail = try sc.finish();
+    const tail = try sc.finishAlloc();
     defer allocator.free(tail);
     try compressed.appendSlice(allocator, tail);
 

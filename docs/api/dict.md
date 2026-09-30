@@ -1,62 +1,89 @@
 ---
 title: Dictionaries
-description: Static and custom dictionary support.
+description: Built-in RFC 7932 static dictionary and custom shared dictionary support in brotli.zig.
 ---
 
 # Dictionaries
 
-Brotli uses dictionaries in two ways:
+Brotli utilizes two distinct dictionary mechanisms to dramatically improve compression ratios, particularly on small messages and structured documents:
 
-1. **Built-in static dictionary** — the 122,784-byte RFC 7932 word list,
-   embedded in the library. Decoding works out of the box; no setup needed.
-2. **Custom raw dictionaries** — user-supplied bytes attached to both the
-   encoder and decoder, enabling compact back-references for small payloads
-   that overlap a shared corpus.
+1. **RFC 7932 Built-In Static Dictionary**: Embedded directly into the library (122,784 bytes of common English, HTML, XML, and punctuation fragments). Always available out of the box with zero runtime setup or transmission overhead.
+2. **Custom Raw Dictionaries**: User-supplied shared corpora (up to 16 MiB) attached to both the encoder and decoder.
 
-## Custom Dictionary (Encoder)
+## Using Custom Dictionaries via Options
 
-```zig
-var enc = brotli.Encoder.init(allocator, .{ .quality = 11 });
-defer enc.deinit();
-if (!enc.attachDictionary(my_dict_bytes)) return error.InvalidDictionary;
-// Must be called before the first compressStream.
-```
+The simplest method is passing `customDictionary` in options:
 
-Rules:
-- Data is **referenced, not copied** — it must outlive the encoder.
-- Maximum size is 16 MiB (`1 << 24`).
-- Empty data is a soft no-op (returns true).
-
-## Custom Dictionary (Decoder)
+### Compression
 
 ```zig
-var d = brotli.Decoder.init(allocator, .{});
-defer d.deinit();
-if (!d.attachDictionary(my_dict_bytes)) return error.InvalidDictionary;
+const brotli = @import("brotli");
+
+const dict = "{\"status\":200,\"message\":\"ok\",\"data\":[";
+const json_payload = "{\"status\":200,\"message\":\"ok\",\"data\":[{\"id\":1}]}";
+
+const compressed = try brotli.compressWithOptions(allocator, json_payload, .{
+    .quality = 11,
+    .customDictionary = dict,
+});
+defer allocator.free(compressed);
 ```
 
-Must be called before any input is fed. The bytes must be **identical** to
-those given to the encoder, otherwise references resolve incorrectly.
-
-## Streaming
+### Decompression
 
 ```zig
-var sc = brotli.StreamingCompressor.init(allocator, .{});
-defer sc.deinit();
-try testing.expect(sc.attachDictionary(dict));
-// then process()/finish() as usual
+const decompressed = try brotli.decompressWithOptions(allocator, compressed, .{
+    .customDictionary = dict,
+});
+defer allocator.free(decompressed);
+
+try std.testing.expectEqualStrings(json_payload, decompressed);
 ```
 
-## How It Works
+## Attaching Dictionaries to Contexts
 
-Dictionary content acts as history that precedes the output: LZ77 matches
-may reach backward into it. On the wire these are ordinary explicit
-distances; the decoder resolves them through its compound-dictionary path
-(mirroring `BrotliDecoderAttachDictionary` semantics). Streams produced with
-a dictionary cannot be decoded without it.
+You can also attach a dictionary dynamically to `Compressor`, `Decompressor`, or `StreamingCompressor`:
 
-## Static Dictionary
+### `Compressor.attachDictionary`
 
-The built-in word list requires no configuration on either side — decoding
-any conforming stream automatically resolves its word/transform references
-through `src/dictionary/dictionary.zig`.
+```zig
+var comp = brotli.Compressor.init(allocator, .{ .quality = 9 });
+defer comp.deinit();
+
+if (!comp.attachDictionary(shared_corpus)) {
+    return error.InvalidDictionary;
+}
+
+// Compress data referencing shared_corpus...
+```
+
+### `Decompressor.attachDictionary`
+
+```zig
+var dec = brotli.Decompressor.init(allocator, .{});
+defer dec.deinit();
+
+if (!dec.attachDictionary(shared_corpus)) {
+    return error.InvalidDictionary;
+}
+
+// Decompress streams produced with shared_corpus...
+```
+
+## Rules and Operational Constraints
+
+- **Exact Match Required**: The decoder must receive the byte-for-byte identical dictionary that was attached during compression.
+- **Reference Semantics**: Dictionary memory is referenced (not copied). The slice must outlive the compression/decompression operations.
+- **Call Order**: When using context objects, `attachDictionary()` must be called **before** any input data is fed.
+- **Maximum Size**: Up to 16 MiB (`1 << 24` bytes, per RFC 7932 compound dictionary rules).
+
+## Built-In Static Dictionary (`brotli.Dictionary`)
+
+The RFC 7932 static dictionary is implemented in `src/dictionary/dictionary.zig` and re-exported as `brotli.Dictionary`:
+
+```zig
+pub const data: []const u8           // 122,784 bytes of raw static dictionary
+pub const size: usize = 122784;
+```
+
+It requires no explicit setup; any standard Brotli stream referencing words or transforms in the static dictionary resolves them automatically.

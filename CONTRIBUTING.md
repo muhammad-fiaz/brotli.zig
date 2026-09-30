@@ -17,19 +17,21 @@ Thank you for your interest in contributing to brotli.zig!
 
 ### Prerequisites
 
-- Zig 0.16.0 or later
+- Zig 0.17.0 or later
 
 ### Building
 
 ```bash
-zig build            # Build library
-zig build test       # Run unit tests
-zig build examples   # Build all examples
+zig build                  # Build library
+zig build test             # Run unit tests and reference interop tests
+zig build run-all-examples # Build and execute all examples
+zig build fuzz             # Run decoder fuzzing tests
+zig build docs             # Generate documentation
 ```
 
 ### Code Style
 
-- Follow idiomatic Zig conventions
+- Follow idiomatic Zig conventions with camelCase public APIs
 - Use the existing code style as reference
 - Keep changes minimal and focused
 - Add tests for new functionality
@@ -37,12 +39,11 @@ zig build examples   # Build all examples
 ### Project Structure
 
 ```
-src/           # Zig binding layer (your contributions go here)
-c/             # Vendored Brotli C source (do not modify)
+src/           # 100% Native Zig Brotli codec implementation
+brotli/        # Upstream reference C tree (reference only)
 examples/      # Example programs
+tests/         # Integration & interoperability test suites
 ```
-
-> **Note:** The `c/` directory contains the upstream Brotli C source. Do not modify it directly. Contributions should be made to the Zig binding layer in `src/`.
 
 ## Pull Requests
 

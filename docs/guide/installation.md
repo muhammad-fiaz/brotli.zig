@@ -7,32 +7,38 @@ description: How to install and set up brotli.zig in your Zig project.
 
 ## Requirements
 
-- **Zig 0.16.0** (required) â€” download from [ziglang.org](https://ziglang.org/download/)
-- No external dependencies required â€” pure Zig implementation
+- **Zig 0.17.0** (required) — download from [ziglang.org](https://ziglang.org/download/)
+- No external dependencies required — pure Zig implementation
 - Supported OS: Windows 10+, Linux, macOS
 - Supported architectures: x86_64, aarch64, x86
 
-::: warning Version Requirement
-This library requires **Zig 0.16.0** as declared in `build.zig.zon` (`minimum_zig_version = "0.16.0"`). Older versions are not supported.
+::: info Version Compatibility
+This library (`v0.0.4+`) requires **Zig 0.17.0** as declared in `build.zig.zon` (`minimum_zig_version = "0.17.0"`). For **Zig 0.16.0** support, install release `v0.0.3` (see [Method 1](#method-1-zig-fetch-recommended--latest-release) below).
 :::
 
 ## Setup
 
-### Method 1: Zig Fetch (Recommended) â€” Latest Release
+### Method 1: Zig Fetch (Recommended) — Latest Release
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.4.tar.gz
 ```
 
-This corresponds to `build.zig.zon` version `0.0.3`:
+This corresponds to `build.zig.zon` version `0.0.4`:
 
 ```zig
 .{
     .name = .brotli,
-    .version = "0.0.3",
-    .minimum_zig_version = "0.16.0",
+    .version = "0.0.4",
+    .minimum_zig_version = "0.17.0",
     // ...
 }
+```
+
+For projects using **Zig 0.16.0**, install the `v0.0.3` release:
+
+```bash
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.3.tar.gz
 ```
 
 ### Method 2: Zig Fetch (Main Branch)
@@ -50,7 +56,7 @@ Add the dependency to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .brotli = .{
-        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.4.tar.gz",
         .hash = "...", // Run `zig fetch --save <url>` to generate the hash.
     },
 },

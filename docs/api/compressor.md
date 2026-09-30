@@ -1,109 +1,158 @@
 ---
-title: Encoder
-description: Reusable streaming encoder with full parameter control.
+title: Compressor / Encoder
+description: Reusable stateful compressor context with parameter control, dictionary attachment, and streaming operations.
 ---
 
-# Encoder
+# Compressor / Encoder
 
-A reusable encoder context. Create once, feed data with
-`compressStream`, take compressed bytes as they appear. Defined in
-`src/compress/encode.zig` and re-exported as `brotli.Encoder`.
+`Compressor` (also exported as `Encoder` and `brotli.Compressor`) represents a reusable Brotli compression context. Create once, use across multiple compression cycles via `reset()`, feed uncompressed data with `compressStream`, or compress memory slices directly.
 
-For the simpler chunk facade see [StreamCompressor](./stream-compressor).
+Defined in `src/compress/encode.zig` and re-exported by `src/brotli.zig`.
 
-## Creation
+## Struct Definition & Initialization
 
 ```zig
-pub fn init(allocator: std.mem.Allocator, options: CompressionOptions) Encoder
+pub fn init(allocator: std.mem.Allocator, options: CompressionOptions) Compressor
+pub fn deinit(self: *Compressor) void
 ```
 
+### Example
+
 ```zig
-var enc = brotli.Encoder.init(allocator, .{ .quality = 9 });
-defer enc.deinit();
+const brotli = @import("brotli");
+
+var comp = brotli.Compressor.init(allocator, .{
+    .quality = 9,
+    .lgWin = 22,
+    .mode = .text,
+});
+defer comp.deinit();
 ```
+
+## Reusable Context (`reset`)
+
+To avoid repeated heap allocation when compressing many payloads, reset the context instead of destroying and recreating it:
+
+```zig
+pub fn reset(self: *Compressor, options: ?CompressionOptions) void
+```
+
+Passing `null` retains the existing options; passing a new `CompressionOptions` updates the configuration while retaining internal buffer capacity.
+
+```zig
+for (files) |file_data| {
+    comp.reset(null);
+    const compressed = try comp.compress(file_data);
+    defer allocator.free(compressed);
+    // Process compressed output...
+}
+```
+
+## Direct Memory Compression
+
+```zig
+pub fn compress(self: *Compressor, input: []const u8) ![]u8
+```
+
+Compresses an input slice directly using the context's current settings and memory workspaces, returning a newly allocated output slice.
 
 ## Parameter Control
 
+You can dynamically adjust compression parameters on an active context:
+
 ```zig
-pub fn setParameter(self: *Encoder, id: u32, value: u32) bool
+pub fn setParameter(self: *Compressor, id: u32, value: u32) bool
 ```
 
-Accepts the `PARAM_*` identifiers (mirroring the C enumeration):
+Accepts camelCase parameters or their uppercase aliases:
+
+| Parameter Constant | Uppercase Alias | Value | Description |
+|---|---|---|---|
+| `brotli.paramMode` | `PARAM_MODE` | 0 | Compression mode (`0 = generic`, `1 = text`, `2 = font`) |
+| `brotli.paramQuality` | `PARAM_QUALITY` | 1 | Quality level (`0..11`) |
+| `brotli.paramLgWin` | `PARAM_LGWIN` | 2 | Window bits (`10..24`, up to `30` if large window) |
+| `brotli.paramLgBlock` | `PARAM_LGBLOCK` | 3 | Block size bits hint |
+| `brotli.paramDisableLiteralContextModeling` | `PARAM_DISABLE_LITERAL_CONTEXT_MODELING` | 4 | Skip second-order context modeling (`0` or `1`) |
+| `brotli.paramSizeHint` | `PARAM_SIZE_HINT` | 5 | Estimated uncompressed stream size |
+| `brotli.paramLargeWindow` | `PARAM_LARGE_WINDOW` | 6 | Enable Large Window Brotli (`0` or `1`) |
+| `brotli.paramNPostfix` | `PARAM_NPOSTFIX` | 7 | Number of postfix bits for distance coding (`0..3`) |
+| `brotli.paramNDirect` | `PARAM_NDIRECT` | 8 | Number of direct distance codes |
 
 ```zig
-try testing.expect(enc.setParameter(brotli.PARAM_QUALITY, 9));
-try testing.expect(enc.setParameter(brotli.PARAM_LGWIN, 20));
-try testing.expect(enc.setParameter(brotli.PARAM_SIZE_HINT, 4096));
-try testing.expect(!enc.setParameter(999, 1)); // unknown -> false
+_ = comp.setParameter(brotli.paramQuality, 6);
+_ = comp.setParameter(brotli.paramLgWin, 20);
+_ = comp.setParameter(brotli.paramSizeHint, 8192);
 ```
 
-## Progress Callbacks
+## Progress Callback
 
 ```zig
-pub fn setProgress(self: *Encoder, cb: ?ProgressCallback, ctx: ?*anyopaque) void
+pub fn setProgress(self: *Compressor, cb: ?ProgressCallback, ctx: ?*anyopaque) void
 ```
 
-The callback fires during streaming compression of large inputs:
+Registers an optional progress observer that fires periodically during compression of large inputs:
 
 ```zig
-const Ctx = struct { last_done: usize = 0 };
+const Context = struct { total_done: usize = 0 };
+
 fn onProgress(ctx: ?*anyopaque, done: usize, total: usize) void {
-    const c: *Ctx = @ptrCast(@alignCast(ctx.?));
-    c.last_done = done;
+    const state: *Context = @ptrCast(@alignCast(ctx.?));
+    state.total_done = done;
+    _ = total;
 }
-enc.setProgress(onProgress, &ctx);
+
+var ctx = Context{};
+comp.setProgress(onProgress, &ctx);
 ```
 
-## Custom Dictionary
+## Custom Dictionary Attachment
 
 ```zig
-pub fn attachDictionary(self: *Encoder, data: []const u8) bool
+pub fn attachDictionary(self: *Compressor, data: []const u8) bool
 ```
 
-Must precede the first `compressStream`. Data is referenced (not copied).
-Decoders must attach the identical bytes to resolve the produced
-back-references.
+Attaches raw dictionary bytes to be used as history before the start of the uncompressed stream. Must be called before any data is fed to `compressStream` or `compress`. The dictionary slice is referenced (not copied) and must remain valid for the duration of the compression.
 
-## Streaming
+## Low-Level Streaming Operations
 
 ```zig
-pub fn compressStream(self: *Encoder, op: Operation, input: ?[]const u8) !void
+pub fn compressStream(self: *Compressor, op: Operation, input: ?[]const u8) !void
 ```
 
-`Operation` mirrors the C enumeration:
+The `op` parameter controls the state transition:
 
 | Operation | Behavior |
-|-----------|----------|
-| `.process` | Compress buffered input; emit complete blocks |
-| `.flush` | Force all pending input into finished (non-final) blocks |
-| `.finish` | Flush everything and emit the final block; marks the stream done |
+|---|---|
+| `.process` | Buffer and compress incoming input; emit complete meta-blocks |
+| `.flush` | Force all buffered data into completed (non-final) blocks |
+| `.finish` | Flush all remaining data and emit the final empty or terminal block |
+| `.emit_metadata` | Write the input as an uncompressed RFC 7932 section 9.2 metadata block |
 
-Output accumulates internally; drain it via:
+### Draining Output
 
 ```zig
-pub fn hasMoreOutput(self: *const Encoder) bool
-pub fn takeOutput(self: *Encoder, dst: []u8) usize // returns bytes copied
+pub fn hasMoreOutput(self: *const Compressor) bool
+pub fn takeOutput(self: *Compressor, dst: []u8) usize
+pub fn isFinished(self: *const Compressor) bool
 ```
 
-## Completion
+### Streaming Loop Example
 
 ```zig
-pub fn isFinished(self: *const Encoder) bool
-```
+var comp = brotli.Compressor.init(allocator, .{ .quality = 9 });
+defer comp.deinit();
 
-## Example
+// 1. Process chunks
+try comp.compressStream(.process, chunk1);
+try comp.compressStream(.process, chunk2);
 
-```zig
-var enc = brotli.Encoder.init(allocator, .{ .quality = 11 });
-defer enc.deinit();
+// 2. Finish stream
+try comp.compressStream(.finish, null);
 
-try enc.compressStream(.process, chunk_a);
-try enc.compressStream(.flush, null);
-try enc.compressStream(.process, chunk_b);
-try enc.compressStream(.finish, null);
-
-// Collect all output.
-var out = std.ArrayList(u8).empty;
-defer out.deinit(allocator);
-try out.appendSlice(allocator, enc.out.items[enc.out_pos..]);
+// 3. Drain output into buffer
+var out_buf: [4096]u8 = undefined;
+while (comp.hasMoreOutput()) {
+    const n = comp.takeOutput(&out_buf);
+    // Write out_buf[0..n] to destination...
+}
 ```

@@ -1,74 +1,74 @@
 ---
 title: Constants
-description: Format constants, limits, and version info exposed by brotli.zig.
+description: Format constants, limits, and version metadata in brotli.zig.
 ---
 
 # Constants
 
-All format constants live in `src/common/constants.zig` and are re-exported
-as top-level aliases in `src/brotli.zig`.
+All format constants defined by RFC 7932 reside in `src/common/constants.zig` and are re-exported by `src/brotli.zig`.
 
-## Top-Level Aliases
+## Top-Level Constants & Limits
 
-```zig
-pub const BLOCKSIZE_MAX = constants.BLOCK_SIZE_CAP; // 16 MiB metablock cap
-pub const MAX_QUALITY = 11;
-pub const MIN_QUALITY = 0;
-pub const DEFAULT_QUALITY = 11;
-pub const DEFAULT_WINDOW = 22;
-pub const MIN_WINDOW_BITS = 10;  // large-window minimum
-pub const MAX_WINDOW_BITS = 24;  // standard RFC 7932 maximum
-pub const LARGE_MAX_WINDOW_BITS = 30;
+`src/brotli.zig` exposes both canonical camelCase constants and traditional uppercase aliases:
 
-pub const CONTEXT_MAP_MAX_RLE = 16;
-pub const MAX_NUMBER_OF_BLOCK_TYPES = 256;
-pub const NUM_LITERAL_SYMBOLS = 256;
-pub const NUM_COMMAND_SYMBOLS = 704;
-pub const NUM_DISTANCE_SHORT_CODES = 16;
-pub const WINDOW_GAP = 16;
-```
+| CamelCase Constant | Uppercase Alias | Value | Description |
+|---|---|---|---|
+| `maxBlockSize` | `BLOCKSIZE_MAX` | `1 << 24` (16 MiB) | Maximum uncompressed length of a single meta-block |
+| `minQuality` | `MIN_QUALITY` | `0` | Minimum compression quality level |
+| `maxQuality` | `MAX_QUALITY` | `11` | Maximum compression quality level |
+| `defaultQuality` | `DEFAULT_QUALITY` | `11` | Default encoder quality level |
+| `defaultWindow` | `DEFAULT_WINDOW` | `22` | Default window bits (`4 MiB - 16 bytes`) |
+| `minWindowBits` | `MIN_WINDOW_BITS` | `10` | Minimum sliding window bits (`1 KiB`) |
+| `maxWindowBits` | `MAX_WINDOW_BITS` | `24` | Maximum RFC 7932 standard window bits (`16 MiB`) |
+| `largeMaxWindowBits` | `LARGE_MAX_WINDOW_BITS` | `30` | Maximum Large Window Brotli window bits (`1 GiB`) |
+| `WINDOW_GAP` | `WINDOW_GAP` | `16` | Ring-buffer backward distance offset (RFC 7932 §9.1) |
 
-## Format Limits (`src/common/constants.zig`)
+## Format Alphabet Limits (`src/common/constants.zig`)
 
 | Constant | Value | Description |
-|----------|-------|-------------|
-| `CONTEXT_MAP_MAX_RLE` | 16 | Max context-map run-length code |
-| `MAX_NUMBER_OF_BLOCK_TYPES` | 256 | Block types per category |
-| `NUM_LITERAL_SYMBOLS` | 256 | Literal alphabet size |
-| `NUM_COMMAND_SYMBOLS` | 704 | Insert-and-copy alphabet size |
-| `NUM_BLOCK_LEN_SYMBOLS` | 26 | Block-count prefix-code symbols |
-| `REPEAT_PREVIOUS_CODE_LENGTH` | 16 | Code-length repeat marker |
-| `REPEAT_ZERO_CODE_LENGTH` | 17 | Zero-run marker |
+|---|---|---|
+| `CONTEXT_MAP_MAX_RLE` | 16 | Maximum run-length code in context map header |
+| `MAX_NUMBER_OF_BLOCK_TYPES` | 256 | Maximum number of block types per block category |
+| `NUM_LITERAL_SYMBOLS` | 256 | Number of literal alphabet symbols |
+| `NUM_COMMAND_SYMBOLS` | 704 | Number of insert-and-copy command alphabet symbols |
+| `NUM_BLOCK_LEN_SYMBOLS` | 26 | Number of block-count prefix code symbols |
+| `NUM_DISTANCE_SHORT_CODES` | 16 | Distance ring-buffer history codes |
+| `REPEAT_PREVIOUS_CODE_LENGTH` | 16 | Code-length repeat marker symbol |
+| `REPEAT_ZERO_CODE_LENGTH` | 17 | Zero-run repeat marker symbol |
 | `CODE_LENGTH_CODES` | 18 | Code-length alphabet size |
-| `LARGE_MIN_WBITS` / `LARGE_MAX_WBITS` | 10 / 30 | Large-window LGWIN bounds |
-| `NUM_DISTANCE_SHORT_CODES` | 16 | Distance ring-buffer codes |
-| `MAX_NPOSTFIX` / `MAX_NDIRECT` | 3 / 120 | Distance parameterization bounds |
-| `MAX_DISTANCE_BITS` | 24 | Standard window distance bits |
-| `MAX_DISTANCE` | `0x3FFFFFC` | Max expressible distance (NPOSTFIX=0) |
-| `MAX_ALLOWED_DISTANCE` | `0x7FFFFFFC` | Absolute decoder limit |
-| `WINDOW_GAP` | 16 | Ring-buffer slack (spec Â§9.1) |
-| `BLOCK_SIZE_CAP` | `1 << 24` | Metablock length ceiling |
+| `MAX_NPOSTFIX` | 3 | Maximum distance postfix bits |
+| `MAX_NDIRECT` | 120 | Maximum direct distance codes |
+| `MAX_DISTANCE_BITS` | 24 | Maximum distance bits for standard streams |
+| `MAX_DISTANCE` | `0x3FFFFFC` | Maximum addressable distance for standard streams |
+| `LARGE_MAX_DISTANCE_BITS` | 62 | Maximum distance bits for Large Window Brotli |
+| `MAX_ALLOWED_DISTANCE` | `0x7FFFFFFC` | Absolute upper bound on decoder distance lookback |
 
-## Version
+## Library Version Identifiers
 
 ```zig
-pub const version = "0.0.3";
-pub const version_number: u32 = 2;
-pub const spec_version = "1.2.0";       // implemented format spec level
-pub const spec_version_number: u32 = 10200;
+pub const version = "0.0.4";
+pub const version_number: u32 = 4;
+pub const versionNumberValue: u32 = 4;
 
-pub fn versionString() []const u8 // "0.0.3"
-pub fn versionNumber() u32        // 2
+pub const spec_version = "1.2.0";
+pub const spec_version_number: u32 = 10200;
+pub const specVersion = "1.2.0";
+pub const specVersionNumber: u32 = 10200;
+
+pub fn versionString() []const u8 { return version; }
+pub fn versionNumber() u32 { return version_number; }
 ```
 
-## Usage
+## Example Usage
 
 ```zig
 const brotli = @import("brotli");
 
-const bound = brotli.maxCompressedSize(data.len);
-std.debug.print("quality {d}..{d}, window {d}..{d}\n", .{
-    brotli.MIN_QUALITY, brotli.MAX_QUALITY,
-    brotli.MIN_WINDOW_BITS, brotli.MAX_WINDOW_BITS,
+std.debug.print("brotli.zig version: {s} (spec RFC 7932 v{s})\n", .{
+    brotli.versionString(),
+    brotli.specVersion,
 });
+
+const max_bound = brotli.maxCompressedSize(1024);
+std.debug.print("Max compressed bound for 1024 bytes: {d}\n", .{max_bound});
 ```

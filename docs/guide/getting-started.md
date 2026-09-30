@@ -8,11 +8,11 @@ description: Get up and running with brotli.zig in minutes.
 brotli.zig is a complete native Zig implementation of [Brotli](https://www.brotli.org/) compression (RFC 7932). No C bindings, no external dependencies â€” just Zig.
 
 ::: warning Version Requirement
-This library targets **Zig 0.16.0** (stable). Download from [ziglang.org](https://ziglang.org/download/).
+This library targets **Zig 0.17.0** (required). Download from [ziglang.org](https://ziglang.org/download/).
 
 | Zig Version | Status |
-|-------------|--------|
-| 0.16.0 | Supported â€” required for this library |
+|---|---|
+| 0.17.0 | Supported — required for this library |
 :::
 
 ## Quick Start
@@ -21,7 +21,7 @@ Add brotli.zig to your `build.zig.zon`:
 
 ```zig
 .brotli = .{
-    .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz",
+    .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.4.tar.gz",
     .hash = "...",  // use zig fetch --save to get the hash
 },
 ```
@@ -87,9 +87,9 @@ const balanced = try brotli.compressWithOptions(allocator, data, .{ .quality = 9
 ```zig
 const opts = brotli.CompressionOptions{
     .quality = 9,
-    .lgwin = 22,
+    .lgWin = 22,
     .mode = .text,
-    .size_hint = data.len,
+    .sizeHint = data.len,
 };
 const compressed = try brotli.compressWithOptions(allocator, data, opts);
 defer allocator.free(compressed);
@@ -128,10 +128,18 @@ var sd = brotli.StreamingDecompressor.init(allocator, .{});
 defer sd.deinit();
 ```
 
+## Acknowledgements
+
+`brotli.zig` is a native Zig implementation of the Brotli format and codec, built entirely from scratch in Zig.
+
+The [Brotli project](https://github.com/google/brotli) is used as a reference for the Brotli format, codec behavior, compatibility, and interoperability verification.
+
+This project does not depend on the upstream implementation.
+
 ## What's Next
 
-- [Installation](/guide/installation) â€” Detailed setup instructions
-- [Compression](/guide/compression) â€” All compression options
-- [Decompression](/guide/decompression) â€” Decompression details
-- [Streaming](/guide/streaming) â€” Chunk-based processing
-- [Dictionaries](/guide/dictionaries) â€” Dictionary compression
+- [Installation](/guide/installation) — Detailed setup instructions
+- [Compression](/guide/compression) — All compression options
+- [Decompression](/guide/decompression) — Decompression details
+- [Streaming](/guide/streaming) — Chunk-based processing
+- [Dictionaries](/guide/dictionaries) — Dictionary compression

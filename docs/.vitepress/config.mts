@@ -239,7 +239,7 @@ gtag('config', '${GA_ID}');`,
           "Detailed decoder error codes",
           "Cross-platform (Linux, Windows, macOS; x86_64, aarch64, x86)",
           "Zero external dependencies",
-          "Zig 0.16.0+ support",
+          "Zig 0.17.0+ support",
         ],
       });
     } else {

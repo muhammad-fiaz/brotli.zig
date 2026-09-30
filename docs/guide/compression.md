@@ -17,9 +17,9 @@ defer allocator.free(compressed);
 ```zig
 const compressed = try brotli.compressWithOptions(allocator, data, .{
     .quality = 9,       // 0..11
-    .lgwin = 22,        // 10..24
+    .lgWin = 22,        // 10..24
     .mode = .text,
-    .size_hint = data.len,
+    .sizeHint = data.len,
 });
 defer allocator.free(compressed);
 ```
@@ -37,7 +37,7 @@ for (chunks) |chunk| {
     defer allocator.free(piece);
     try out.appendSlice(allocator, piece);
 }
-const tail = try sc.finish();
+const tail = try sc.finishAlloc();
 defer allocator.free(tail);
 try out.appendSlice(allocator, tail);
 ```

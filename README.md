@@ -3,7 +3,7 @@
 # brotli.zig
 
 <a href="https://muhammad-fiaz.github.io/brotli.zig/"><img src="https://img.shields.io/badge/docs-muhammad--fiaz.github.io-blue" alt="Documentation"></a>
-<a href="https://ziglang.org/"><img src="https://img.shields.io/badge/Zig-0.16.0-orange.svg?logo=zig" alt="Zig Version"></a>
+<a href="https://ziglang.org/"><img src="https://img.shields.io/badge/Zig-0.17.0-orange.svg?logo=zig" alt="Zig Version"></a>
 <a href="https://github.com/muhammad-fiaz/brotli.zig"><img src="https://img.shields.io/github/stars/muhammad-fiaz/brotli.zig" alt="GitHub stars"></a>
 <a href="https://github.com/muhammad-fiaz/brotli.zig/issues"><img src="https://img.shields.io/github/issues/muhammad-fiaz/brotli.zig" alt="GitHub issues"></a>
 <a href="https://github.com/muhammad-fiaz/brotli.zig/pulls"><img src="https://img.shields.io/github/issues-pr/muhammad-fiaz/brotli.zig" alt="GitHub pull requests"></a>
@@ -14,7 +14,7 @@
 <a href="https://pay.muhammadfiaz.com"><img src="https://img.shields.io/badge/Sponsor-pay.muhammadfiaz.com-ff69b4?style=flat&logo=heart" alt="Sponsor"></a>
 <a href="https://github.com/sponsors/muhammad-fiaz"><img src="https://img.shields.io/badge/Sponsor-GitHub-pink?style=social&logo=github" alt="GitHub Sponsors"></a>
 
-<p><em>Native Zig implementation of the Brotli RFC 7932 compression format.</em></p>
+<p><em>Production-grade, native Zig implementation of the Brotli RFC 7932 compression format targeting Zig 0.17.0.</em></p>
 
 <b><a href="https://muhammad-fiaz.github.io/brotli.zig/">Documentation</a> |
 <a href="https://muhammad-fiaz.github.io/brotli.zig/api/">API Reference</a> |
@@ -23,30 +23,24 @@
 
 </div>
 
-`brotli.zig` is a complete native Zig implementation of the [Brotli](https://www.brotli.org/) compressed-data format (RFC 7932, including Large Window Brotli). No C bindings, no external dependencies. Every byte is Zig.
+`brotli.zig` is a complete, native Zig implementation of the [Brotli](https://www.brotli.org/) compressed-data format (RFC 7932, including Large Window Brotli) targeting **Zig 0.17.0**, built entirely from scratch in Zig. No C bindings, no libc, no external dependencies.
 
 > [!TIP]
-> If you build with brotli.zig, make sure to give it a star.
-
-> [!IMPORTANT]
-> **Version 0.0.1 used C bindings** as a wrapper around the reference Brotli C library.
-> It is deprecated and should not be used in new projects. Starting with **v0.0.3**,
-> `brotli.zig` is a fully native Zig implementation — no C code, no libc, no external
-> dependencies. All compression and decompression runs entirely in Zig.
+> If you build with brotli.zig, make sure to give it a star!
 
 > [!NOTE]
-> This implementation is based on **Brotli v1.2.0** as the format specification (RFC 7932), re-designed with Zig idioms and implemented natively.
+> `brotli.zig` implements the RFC 7932 format specification and Large Window extension. The upstream [Brotli project](https://github.com/google/brotli) is used as a reference for format behavior, compatibility requirements, and interoperability testing.
 >
-> **Pure Zig — zero C dependencies:** Unlike binding-based approaches, `brotli.zig` implements the Brotli format directly in Zig, including:
-> - **Streaming decoder state machine** — window bits (incl. large window), metablock headers, metadata blocks, uncompressed metablocks, partial input/output resumption
-> - **Huffman decoding** — code-length tables, two-level explicit tables, simple/tree-select tables
-> - **Context modeling** — the full 2048-entry literal context lookup table; the encoder emits second-order context-modeled literals with clustered context maps
-> - **LZ77 back-references** with distance ring-buffer shortcuts
-> - **Static dictionary** — the complete 122,784-byte RFC 7932 word list; the encoder emits dictionary word references (including uppercase transforms) and both sides accept custom raw dictionaries
-> - **Custom dictionaries** — attach shared raw bytes to encoder and decoder for small-payload compression
-> - **Native encoder** — hash-chain match finder, Huffman table construction, metablock emission, quality levels 0–11, literal block switching, second-order context modeling with clustered context maps, NPOSTFIX/NDIRECT distance coding, large-window streams up to LGWIN 30, and metadata metablocks
-> - **Progress callbacks** — observe streaming compression progress for large files
-> - **Parameter API** — all nine `PARAM_*` encoder knobs mirroring the C enumeration
+> **Pure Zig — zero C dependencies:**
+> - **Streaming decoder state machine** — window bits (incl. large window up to 30), metablock headers, metadata blocks, uncompressed metablocks, partial input/output resumption across arbitrary byte splits.
+> - **Huffman decoding & encoding** — canonical codes, code-length tables, two-level explicit tables, simple/complex tree construction.
+> - **Context modeling** — 2nd-order literal context models, context maps with inverse move-to-front and RLE decoding.
+> - **LZ77 back-references** with ring-buffer history and distance caches.
+> - **Static dictionary** — complete 122,784-byte RFC 7932 static dictionary with 121 transforms.
+> - **Custom dictionaries** — attach shared raw dictionaries to encoder and decoder.
+> - **Native encoder** — hash-chain match finder, Huffman coding, block splitting, quality levels 0–11, literal block switching, NPOSTFIX/NDIRECT distance coding, metadata metablocks.
+> - **Progress callbacks** — monitor streaming compression progress for large inputs.
+> - **Reusable contexts** — initialize once, compress/decompress multiple streams via `reset()`, eliminating allocation churn.
 
 ---
 
@@ -54,26 +48,22 @@
 <summary><strong>Features</strong> (click to expand)</summary>
 
 | Feature | Description |
-|---------|-------------|
-| **One-shot Compression** | `brotli.compress()` for single-call compression with default options |
-| **One-shot Decompression** | `brotli.decompress()` for single-call decompression |
-| **Compression Levels** | Quality 0–11 via `brotli.compressWithOptions(.{ .quality = ... })` |
-| **Reusable Encoder** | `Encoder` for efficient multi-block streaming with `setParameter()` control |
-| **Reusable Decoder** | `Decoder` streaming state machine with detailed error codes |
-| **Streaming Compression** | `StreamingCompressor` chunked processing with `process`/`flush`/`finish` |
-| **Streaming Decompression** | `StreamingDecompressor` chunked processing with `feed`/`take` |
-| **Dictionary Compression** | `attachDictionary()` on both encoder and decoder |
-| **Built-in Static Dictionary** | Complete RFC 7932 122,784-byte word list + 121 transforms, zero config |
-| **Window Sizes** | LGWIN 10â€“24 standard; large-window decode up to 30 |
-| **Modes** | Generic, text, and font analysis hints |
-| **Large Window** | Optional LGWIN up to 30 encode/decode (incompatible extension) |
-| **Metadata Blocks** | Emit side-channel metadata via `emitMetadata()` / `.emit_metadata` |
-| **Parameter API** | All nine `PARAM_*` identifiers mirroring `BrotliEncoderSetParameter` |
-| **Progress Callbacks** | Optional observer during streaming compression |
-| **Preallocated Output** | `decompressInto()` and `maxCompressedSize()` for buffer control |
-| **Detailed Errors** | Every decoder failure carries a named `ErrorCode` mirroring C strings |
-| **Cross-platform** | Linux, Windows, macOS; x86_64, aarch64, x86 (32-bit) |
-| **Zero Dependencies** | Pure Zig implementation — no C libraries, no system dependencies |
+|---|---|
+| **One-shot Compression** | `brotli.compress(allocator, data)` for single-call compression |
+| **One-shot Decompression** | `brotli.decompress(allocator, data)` for single-call decompression |
+| **Compression Levels** | Quality 0–11 via `brotli.compressWithOptions(allocator, data, .{ .quality = ... })` |
+| **Reusable Compressor** | `brotli.Compressor` (`init`, `compress`, `reset`, `deinit`) |
+| **Reusable Decompressor** | `brotli.Decompressor` (`init`, `decompress`, `decompressInto`, `reset`, `deinit`) |
+| **I/O Streaming** | `compressStream` and `decompressStream` with Zig 0.17 `std.Io.Reader` & `std.Io.Writer` |
+| **Streaming Compressor** | `StreamingCompressor` with `write(chunk, writer)` and `finish(writer)` |
+| **Streaming Decompressor** | `StreamingDecompressor` with `read(reader, writer)` and `feed(chunk)` / `take(out)` |
+| **Dictionary Compression** | `attachDictionary()` on both compressor and decompressor |
+| **Built-in Static Dictionary** | Complete RFC 7932 word list + 121 transforms |
+| **Window Sizes** | LGWIN 10–24 standard; large-window up to 30 |
+| **Modes** | Generic (`.generic`), text (`.text`), and font (`.font`) |
+| **Resource Limits** | `maxOutputSize` and `ringBufferSizeLimit` on `DecompressionOptions` |
+| **Canonical Error Set** | Coherent `brotli.Error` error set mapped from internal codes |
+| **Zero Dependencies** | Pure Zig implementation targeting Zig 0.17.0 |
 
 </details>
 
@@ -87,8 +77,8 @@
 ## Prerequisites
 
 | Requirement | Version | Notes |
-|-------------|---------|-------|
-| **Zig** | **0.16.0** (required) | Download from [ziglang.org](https://ziglang.org/download/) |
+|---|---|---|
+| **Zig** | **0.17.0** (required) | Download from [ziglang.org](https://ziglang.org/download/) |
 | **Operating System** | Windows 10+, Linux, macOS | Cross-platform support |
 
 ---
@@ -98,23 +88,23 @@
 `brotli.zig` targets these architectures:
 
 | Platform | x86_64 (64-bit) | aarch64 (ARM64) | x86 (32-bit) |
-|----------|-----------------|-----------------|--------------|
+|---|---|---|---|
 | **Linux** | Yes | Yes | Yes |
 | **Windows** | Yes | Yes | Yes |
 | **macOS** | Yes | Yes (Apple Silicon) | Yes |
 
 ### Cross-Compilation
 
-Zig makes cross-compilation easy. Build for any target from any host:
+Zig makes cross-compilation easy:
 
 ```bash
-# Build for Linux ARM64 from Windows
+# Build for Linux ARM64
 zig build -Dtarget=aarch64-linux
 
-# Build for Windows from Linux
+# Build for Windows x86_64
 zig build -Dtarget=x86_64-windows
 
-# Build for macOS Apple Silicon from Linux
+# Build for macOS Apple Silicon
 zig build -Dtarget=aarch64-macos
 
 # Build for 32-bit Windows
@@ -127,47 +117,22 @@ zig build -Dtarget=x86-windows
 
 ## Installation
 
-### Method 1: Zig Fetch (Recommended)
-
-**Latest Release (v0.0.3)**
+### Method 1: Zig Fetch (Recommended) — Latest Release
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.4.tar.gz
+```
+
+For projects using **Zig 0.16.0**, install the `v0.0.3` release:
+
+```bash
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.3.tar.gz
 ```
 
 ### Method 2: Zig Fetch (Main Branch)
 
 ```bash
 zig fetch --save git+https://github.com/muhammad-fiaz/brotli.zig.git
-```
-
-### Method 3: Manual `build.zig.zon` Configuration
-
-```zig
-.dependencies = .{
-    .brotli = .{
-        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz",
-        .hash = "...", // Run `zig fetch --save <url>` to generate the hash.
-    },
-},
-```
-
-### Method 4: Local Source Checkout
-
-```bash
-git clone https://github.com/muhammad-fiaz/brotli.zig.git
-cd brotli.zig
-zig build
-```
-
-Path dependency in another project's `build.zig.zon`:
-
-```zig
-.dependencies = .{
-    .brotli = .{
-        .path = "../brotli.zig",
-    },
-},
 ```
 
 ### Wire into `build.zig`
@@ -183,100 +148,134 @@ const brotli_dep = b.dependency("brotli", .{
 exe.root_module.addImport("brotli", brotli_dep.module("brotli"));
 ```
 
+---
+
 ## Quick Start
 
-### One-Liner Compression
+### One-Shot Compression & Decompression
 
 ```zig
 const brotli = @import("brotli");
 
+// Compress
 const compressed = try brotli.compress(allocator, data);
 defer allocator.free(compressed);
 
+// Decompress
 const decompressed = try brotli.decompress(allocator, compressed);
 defer allocator.free(decompressed);
 ```
 
-### Full Options
+### Advanced Options (camelCase)
 
 ```zig
 const compressed = try brotli.compressWithOptions(allocator, data, .{
     .quality = 9,          // 0..11
-    .lgwin = 22,           // 10..24 window bits
-    .mode = .text,         // generic | text | font
-    .size_hint = data.len, // improves progress reporting
+    .lgWin = 22,           // 10..24 window bits
+    .mode = .text,         // .generic | .text | .font
+    .sizeHint = data.len,  // size hint for block allocation
 });
 defer allocator.free(compressed);
+
+const decompressed = try brotli.decompressWithOptions(allocator, compressed, .{
+    .maxOutputSize = 10 * 1024 * 1024, // protect against decompression bombs
+    .ringBufferSizeLimit = 4 * 1024 * 1024,
+});
+defer allocator.free(decompressed);
 ```
 
-### Reusable Contexts
+### Reusable Contexts (Zero Allocation Churn)
+
+Initialize the context once with your allocator, reuse across multiple streams via `reset()`, and deinitialize when done:
 
 ```zig
-var enc = brotli.Encoder.init(allocator, .{ .quality = 11 });
-defer enc.deinit();
+var compressor = brotli.Compressor.init(allocator, .{ .quality = 6 });
+defer compressor.deinit();
 
-try enc.compressStream(.process, chunk_a);
-try enc.compressStream(.flush, null);
-try enc.compressStream(.finish, null);
-// drain enc.out.items[enc.out_pos..]
+var decompressor = brotli.Decompressor.init(allocator, .{});
+defer decompressor.deinit();
+
+// First stream
+const comp1 = try compressor.compress(input1);
+defer allocator.free(comp1);
+const out1 = try decompressor.decompress(comp1);
+defer allocator.free(out1);
+
+// Reset state without reallocating buffers
+compressor.reset(.{ .quality = 9 });
+decompressor.reset(.{});
+
+// Second stream
+const comp2 = try compressor.compress(input2);
+defer allocator.free(comp2);
+const out2 = try decompressor.decompress(comp2);
+defer allocator.free(out2);
 ```
 
-### Simplified API Aliases
+### Streaming I/O with `std.Io`
+
+Stream directly between `std.Io.Reader` and `std.Io.Writer`:
 
 ```zig
-// Compression
-const compressed = try brotli.compress(allocator, data);
-const tuned = try brotli.compressWithOptions(allocator, data, .{ .quality = 9 });
-const bound = brotli.maxCompressedSize(data.len);
+// Stream compression
+var reader = std.Io.Reader.fixed(input_bytes);
+var writer = std.Io.Writer.fixed(&out_buffer);
 
-// Decompression
-const out = try brotli.decompress(allocator, compressed);
-var dst: [1024]u8 = undefined;
-const n = try brotli.decompressInto(allocator, compressed, &dst);
+try brotli.compressStream(allocator, &reader, &writer, .{ .quality = 5 });
 
-// Dictionaries
-_ = enc.attachDictionary(dict_bytes);
-_ = dec.attachDictionary(dict_bytes);
+// Stream decompression
+var comp_reader = std.Io.Reader.fixed(writer.buffered());
+var decomp_writer = std.Io.Writer.fixed(&decomp_buffer);
 
-// Progress
-enc.setProgress(myCallback, &my_ctx);
-
-// Version
-const ver = brotli.versionNumber();
-const str = brotli.versionString();
+try brotli.decompressStream(allocator, &comp_reader, &decomp_writer, .{});
 ```
 
-### Streaming
+### Chunked Streaming Compressor & Decompressor
 
 ```zig
-// Compression
+// Incremental compression
 var sc = brotli.StreamingCompressor.init(allocator, .{ .quality = 9 });
 defer sc.deinit();
-const piece = try sc.process(chunk);   // returns owned slice
-const tail = try sc.finish();          // final block
 
-// Decompression
+try sc.write(chunk1, &writer);
+try sc.write(chunk2, &writer);
+try sc.finish(&writer);
+
+// Incremental decompression
 var sd = brotli.StreamingDecompressor.init(allocator, .{});
 defer sd.deinit();
+
 sd.feed(chunk);
-var buf: [4096]u8 = undefined;
-const n = try sd.take(&buf);
+var out_buf: [4096]u8 = undefined;
+while (!sd.isFinished()) {
+    const n = try sd.take(&out_buf);
+    if (n == 0) break;
+    // process out_buf[0..n]
+}
 ```
 
-### Dictionary Compression
+### Custom Dictionary Compression
 
 ```zig
-// Attach identical bytes to both sides BEFORE use.
-if (!enc.attachDictionary(dict_bytes)) return error.InvalidDictionary;
-if (!dec.attachDictionary(dict_bytes)) return error.InvalidDictionary;
+const dict = "shared vocabulary and schema definitions for compact communication";
 
-// Now streams reference the corpus compactly:
-const tiny = try brotli.compress(allocator, overlapping_input);
-defer allocator.free(tiny); // only decodable with the same dict attached
+// Attach dictionary on both sides
+var compressor = brotli.Compressor.init(allocator, .{ .quality = 11 });
+defer compressor.deinit();
+_ = compressor.attachDictionary(dict);
+
+var decompressor = brotli.Decompressor.init(allocator, .{});
+defer decompressor.deinit();
+_ = decompressor.attachDictionary(dict);
+
+const compressed = try compressor.compress("compact communication with shared vocabulary");
+defer allocator.free(compressed);
+
+const original = try decompressor.decompress(compressed);
+defer allocator.free(original);
 ```
 
-The built-in RFC 7932 static dictionary works automatically on both sides.
-
+---
 
 ## API Reference
 
@@ -284,106 +283,107 @@ The built-in RFC 7932 static dictionary works automatically on both sides.
 
 | Function | Description |
 |---|---|
-| `brotli.compress(alloc, src)` | One-shot compression (quality 11) |
+| `brotli.compress(alloc, src)` | One-shot compression (default quality 11) |
 | `brotli.decompress(alloc, src)` | One-shot decompression |
-| `brotli.compressWithOptions(alloc, src, opts)` | Compress with `CompressionOptions` |
-| `brotli.decompressWithOptions(alloc, src, opts)` | Decompress with `DecoderOptions` |
-| `brotli.decompressInto(dst, src)` | Decompress into preallocated buffer |
-| `brotli.maxCompressedSize(src_size)` | Maximum compressed size for allocation |
-| `brotli.versionString()` / `versionNumber()` | Library version |
+| `brotli.compressWithOptions(alloc, src, opts)` | Compression with `CompressionOptions` |
+| `brotli.decompressWithOptions(alloc, src, opts)` | Decompression with `DecompressionOptions` |
+| `brotli.decompressInto(alloc, src, dst)` | Decompress into preallocated buffer |
+| `brotli.compressStream(alloc, reader, writer, opts)` | Stream compression via `std.Io` |
+| `brotli.decompressStream(alloc, reader, writer, opts)` | Stream decompression via `std.Io` |
+| `brotli.maxCompressedSize(src_size)` | Calculate upper bound on compressed size |
+| `brotli.versionString()` / `versionNumber()` | Library version (`0.0.4` / `4`) |
 
 ### Types
 
 | Type | Description |
 |---|---|
-| `Encoder` | Streaming encoder: `init(alloc, opts)`, `setParameter(id, val)`, `attachDictionary()`, `setProgress()`, `compressStream(op, in)`, `takeOutput()`, `isFinished()` |
-| `Decoder` | Streaming decoder: `init(alloc, opts)`, `attachDictionary()`, `decompressStream(&in,&out,&total)`, `errorCode().name()` |
-| `StreamingCompressor` | Chunk facade: `init(alloc, opts)`, `process(chunk)`, `flush()`, `finish()`, `setProgress()`, `attachDictionary()` |
-| `StreamingDecompressor` | Chunk facade: `init(alloc, opts)`, `feed(chunk)`, `take(out)`, `isFinished()`, `totalOut()` |
-| `CompressionOptions` | quality, lgwin, mode, lgblock, size_hint, large_window, npostfix, ndirect, progress, progress_ctx |
-| `DecoderOptions` | `large_window: bool` |
-| `ErrorCode` | Named decoder errors mirroring `BrotliDecoderErrorStr` |
-| `MetadataCallbacks` | Decoder metadata-block observers |
+| `brotli.Compressor` | Reusable compressor: `init`, `compress`, `reset`, `attachDictionary`, `deinit` |
+| `brotli.Decompressor` | Reusable decompressor: `init`, `decompress`, `decompressInto`, `reset`, `attachDictionary`, `deinit` |
+| `brotli.StreamingCompressor` | Streaming compressor: `write(chunk, writer)`, `finish(writer)`, `process(chunk)`, `flushAlloc()`, `finishAlloc()` |
+| `brotli.StreamingDecompressor` | Streaming decompressor: `read(reader, writer)`, `feed(chunk)`, `take(out)`, `reset()` |
+| `brotli.CompressionOptions` | `quality`, `lgWin`, `mode`, `lgBlock`, `sizeHint`, `largeWindow`, `nPostfix`, `nDirect`, `customDictionary` |
+| `brotli.DecompressionOptions` | `largeWindow`, `customDictionary`, `maxOutputSize`, `ringBufferSizeLimit`, `metadataCallbacks` |
+| `brotli.CompressionMode` | `.generic`, `.text`, `.font` |
+| `brotli.Error` | Canonical public error set: `CorruptStream`, `TruncatedInput`, `ResourceLimitExceeded`, etc. |
+| `brotli.ErrorCode` | Detailed Brotli codec error enumeration mirroring upstream specifications |
 
 ### Parameter Identifiers
 
-`PARAM_MODE`, `PARAM_QUALITY`, `PARAM_LGWIN`, `PARAM_LGBLOCK`,
-`PARAM_DISABLE_LITERAL_CONTEXT_MODELING`, `PARAM_SIZE_HINT`,
-`PARAM_LARGE_WINDOW`, `PARAM_NPOSTFIX`, `PARAM_NDIRECT` — pass to
-`Encoder.setParameter(id, value)`.
+- `brotli.paramMode`
+- `brotli.paramQuality`
+- `brotli.paramLgWin`
+- `brotli.paramLgBlock`
+- `brotli.paramDisableLiteralContextModeling`
+- `brotli.paramSizeHint`
+- `brotli.paramLargeWindow`
+- `brotli.paramNPostfix`
+- `brotli.paramNDirect`
 
-### Namespaces
-
-| Namespace | Description |
-|---|---|
-| `brotli.constants` | Format limits: alphabet sizes, window bounds, distance caps |
-| `brotli.Dictionary` | Embedded RFC 7932 static dictionary resource |
-| `brotli.huffman` / `bit_writer` / `BitReader` | Low-level primitives (advanced use) |
+---
 
 ## Examples
 
-The `examples/` directory contains runnable examples:
+The `examples/` directory contains complete, runnable examples:
 
 | Example | File | Description |
-|---------|------|-------------|
+|---|---|---|
 | `compress_file` | `examples/compress_file.zig` | One-shot compression across quality levels with round-trip verification |
-| `streaming_compression` | `examples/streaming_compression.zig` | 4 MiB chunked streaming with progress callback |
-| `decompress_file` | `examples/decompress_file.zig` | Basic decompression |
-| `streaming_decompression` | `examples/streaming_decompression.zig` | Chunked decompression |
-| `dictionary_compression` | `examples/dictionary_compression.zig` | Shared-dictionary round trip (plain decode fails without it!) |
-| `reusable_context` | `examples/reusable_context.zig` | Multiple streams on one context |
-| `error_handling` | `examples/error_handling.zig` | Corruption, truncation, and error diagnostics |
-| `format_introspection` | `examples/format_introspection.zig` | Version, limits, and constants |
-| `bit_level` | `examples/bit_level.zig` | Low-level bit reader/writer primitives |
+| `streaming_compression` | `examples/streaming_compression.zig` | Chunked streaming compression with progress callback |
+| `decompress_file` | `examples/decompress_file.zig` | File decompression using `std.Io` |
+| `streaming_decompression` | `examples/streaming_decompression.zig` | Chunked streaming decompression |
+| `dictionary_compression` | `examples/dictionary_compression.zig` | Custom shared-dictionary compression |
+| `reusable_context` | `examples/reusable_context.zig` | Context reuse via `reset()` without reallocating buffers |
+| `error_handling` | `examples/error_handling.zig` | Corrupted bitstream detection and diagnostics |
+| `format_introspection` | `examples/format_introspection.zig` | Library version, codec constants, and format limits |
+| `bit_level` | `examples/bit_level.zig` | Low-level bit reader and writer primitives |
 
-To run any example:
+Run any example:
 
 ```bash
 zig build run-compress_file
 zig build run-streaming_compression
-zig build run-dictionary_compression
-zig build run-all-examples   # everything at once
+zig build run-reusable_context
+zig build run-all-examples   # Run all 9 examples
 ```
 
-## Validation Matrix
-
-Validate host functionality and cross-target compatibility:
-
-```bash
-# Host runtime validation
-zig build test --summary all
-zig build run-all-examples
-
-# Cross-target library compile validation
-zig build -Dtarget=aarch64-linux
-zig build -Dtarget=x86_64-windows
-zig build -Dtarget=aarch64-macos
-zig build -Dtarget=x86-windows
-```
+---
 
 ## Building & Testing
 
 ```bash
-zig build                    # Build library
-zig build test               # Run all tests
-zig build test --summary all # With summary
-zig build run-all-examples   # Run all examples
-zig build fuzz               # Decoder robustness fuzzer
-zig build docs               # Generate API documentation
+zig build                    # Build native Brotli library
+zig build test               # Run all unit and interoperability tests
+zig build test --summary all # Detailed test execution summary
+zig build run-all-examples   # Run all 9 example executables
+zig build fuzz               # Run decoder fuzzer
+zig build docs               # Generate documentation in zig-out/docs/
 ```
+
+---
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome! Please ensure all tests pass:
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass: `zig build test --summary all`
-5. Ensure formatting passes: `zig fmt --check src/`
-6. Submit a pull request
+```bash
+zig fmt .
+zig build test --summary all
+zig build run-all-examples
+```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+## Security
+
+For vulnerability reporting and security guarantees, please see [SECURITY.md](SECURITY.md).
+
+## Acknowledgements
+
+`brotli.zig` is a native Zig implementation of the Brotli format and codec, built entirely from scratch in Zig.
+
+The [Brotli project](https://github.com/google/brotli) is used as a reference for the Brotli format, codec behavior, compatibility, and interoperability verification.
+
+This project does not depend on the upstream implementation.
 
 ## License
 

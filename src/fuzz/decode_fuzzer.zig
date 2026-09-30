@@ -40,13 +40,15 @@ test "fuzz: deterministic malformed corpus does not crash" {
     const rand = prng.random();
 
     // All-zero and all-FF extremes.
-    decodeOneShot(&[_]u8{0} ** 64);
-    decodeOneShot(&[_]u8{0xFF} ** 64);
+    const all_zero: [64]u8 = @splat(0);
+    decodeOneShot(&all_zero);
+    const all_ff: [64]u8 = @splat(0xFF);
+    decodeOneShot(&all_ff);
     // Valid-looking window bits followed by garbage.
-    var c2 = [_]u8{0} ** 64;
+    var c2: [64]u8 = @splat(0);
     c2[0] = 0x21; // wbits=10-ish pattern
     decodeOneShot(&c2);
-    var c3 = [_]u8{0} ** 64;
+    var c3: [64]u8 = @splat(0);
     c3[0] = 0x01;
     decodeOneShot(&c3);
     // Fully random tails.

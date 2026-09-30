@@ -59,9 +59,10 @@ pub const ErrorCode = enum(i8) {
     alloc_block_type_trees = -30,
 
     unreachable_state = -31,
+    resource_limit = -32,
 
     pub fn isError(code: ErrorCode) bool {
-        return @intFromEnum(code) < 0;
+        return @backingInt(code) < 0;
     }
 
     pub fn name(code: ErrorCode) []const u8 {
@@ -97,6 +98,23 @@ pub const ErrorCode = enum(i8) {
             .alloc_ring_buffer_2 => "ERROR_ALLOC_RING_BUFFER_2",
             .alloc_block_type_trees => "ERROR_ALLOC_BLOCK_TYPE_TREES",
             .unreachable_state => "ERROR_UNREACHABLE",
+            .resource_limit => "ERROR_RESOURCE_LIMIT",
+        };
+    }
+
+    pub fn toError(code: ErrorCode) anyerror {
+        return switch (code) {
+            .no_error, .success => error.UnexpectedSuccess,
+            .needs_more_input => error.TruncatedInput,
+            .needs_more_output, .resource_limit => error.ResourceLimitExceeded,
+            .format_exuberant_nibble, .format_exuberant_meta_nibble, .format_padding_1, .format_padding_2, .format_window_bits => error.InvalidHeader,
+            .format_reserved, .format_block_length_1, .format_block_length_2, .format_block_switch => error.InvalidMetaBlock,
+            .format_simple_huffman_alphabet, .format_simple_huffman_same, .format_cl_space, .format_huffman_space, .format_context_map_repeat => error.InvalidHuffmanTree,
+            .format_transform, .format_dictionary, .error_compound_dictionary, .error_dictionary_not_set => error.InvalidDictionaryReference,
+            .format_distance => error.InvalidDistance,
+            .error_invalid_arguments => error.InvalidParameter,
+            .alloc_context_modes, .alloc_tree_groups, .alloc_context_map, .alloc_ring_buffer_1, .alloc_ring_buffer_2, .alloc_block_type_trees => error.OutOfMemory,
+            .unreachable_state => error.CorruptedStream,
         };
     }
 };
@@ -110,10 +128,18 @@ pub const Result = enum {
 
 pub const Options = struct {
     /// Enable "Large Window Brotli" (window up to 30 bits).
-    large_window: bool = false,
+    largeWindow: bool = false,
     /// When true the ring buffer grows in small steps (saves memory for
     /// tiny streams at the cost of some speed).
-    canny_ringbuffer_allocation: bool = true,
+    cannyRingbufferAllocation: bool = true,
+    /// Optional raw custom dictionary data.
+    customDictionary: ?[]const u8 = null,
+    /// Safety limit on ring buffer size in bytes (0 = no limit).
+    ringBufferSizeLimit: usize = 0,
+    /// Safety limit on maximum decompressed output size in bytes (null = no limit).
+    maxOutputSize: ?usize = null,
+    /// Callbacks for metadata metablocks.
+    metadataCallbacks: ?MetadataCallbacks = null,
 };
 
 const State = enum {
@@ -168,7 +194,7 @@ const TreeGroup = struct {
     htrees: []u32 = &.{},
 
     fn get(self: *const TreeGroup, i: usize) []const HuffmanCode {
-        std.debug.assert(i < self.num_htrees);
+        if (i >= self.num_htrees) return &.{};
         return self.codes[self.htrees[i]..];
     }
 };
@@ -304,7 +330,7 @@ pub const Decoder = struct {
 
     br: BitReader = .{},
     /// Holds up to 7 leftover input bytes between streaming calls.
-    buffer: [8]u8 align(8) = [_]u8{0} ** 8,
+    buffer: [8]u8 align(8) = @splat(0),
     buffer_length: usize = 0,
     resume_skip_bits: u6 = 0,
 
@@ -331,7 +357,7 @@ pub const Decoder = struct {
     block_len_trees: []HuffmanCode = &.{}, // 3 * HUFFMAN_MAX_SIZE_26
 
     trivial_literal_context: bool = false,
-    trivial_literal_contexts: [8]u32 = .{0} ** 8,
+    trivial_literal_contexts: [8]u32 = @splat(0),
     distance_context: i32 = 0,
     block_length: [3]u64 = .{ 0, 0, 0 },
     block_length_index: u64 = 0,
@@ -408,11 +434,19 @@ pub const Decoder = struct {
     dist_offset: [544]u32 = undefined,
 
     pub fn init(allocator: Allocator, options: Options) Decoder {
-        return .{
+        var d = Decoder{
             .allocator = allocator,
             .options = options,
             .mtf_upper_bound = 63,
+            .large_window = options.largeWindow,
         };
+        if (options.metadataCallbacks) |cb| {
+            d.metadata_cb = cb;
+        }
+        if (options.customDictionary) |dict| {
+            _ = d.attachDictionary(dict);
+        }
+        return d;
     }
 
     pub fn deinit(self: *Decoder) void {
@@ -432,10 +466,107 @@ pub const Decoder = struct {
         }
     }
 
-    /// Resets to a fresh stream without releasing buffers (reusable contexts).
+    /// Resets the decoder state for a new stream, retaining allocated ring buffer and tree arrays.
+    pub fn reset(self: *Decoder, options: ?Options) void {
+        self.cleanupAfterMetablock(true);
+        if (options) |opts| {
+            self.options = opts;
+            self.large_window = opts.largeWindow;
+            if (opts.metadataCallbacks) |cb| {
+                self.metadata_cb = cb;
+            }
+            if (opts.customDictionary) |dict| {
+                _ = self.attachDictionary(dict);
+            }
+        }
+        self.run_state = .uninited;
+        self.loop_counter = 0;
+        self.br = .{};
+        self.buffer = @splat(0);
+        self.buffer_length = 0;
+        self.resume_skip_bits = 0;
+        self.pos = 0;
+        self.max_backward_distance = 0;
+        self.max_distance = 0;
+        self.dist_rb_idx = 0;
+        self.dist_rb = .{ 16, 15, 11, 4 };
+        self.err = .success;
+        self.meta_block_remaining_len = 0;
+        self.partial_pos_out = 0;
+        self.rb_roundtrips = 0;
+        self.should_wrap_ringbuffer = false;
+        self.substate_metablock_header = .none;
+        self.substate_tree_group = .none;
+        self.substate_context_map = .none;
+        self.substate_uncompressed = .none;
+        self.substate_read_block_length = .none;
+        self.substate_huffman = .none;
+        self.substate_decode_uint8 = .none;
+        self.trivial_literal_context = false;
+        self.trivial_literal_contexts = @splat(0);
+        self.distance_context = 0;
+        self.block_length = .{ 0, 0, 0 };
+        self.block_length_index = 0;
+        self.num_block_types = .{ 1, 1, 1 };
+        self.block_type_rb = .{ 1, 0, 1, 0, 1, 0 };
+        self.distance_postfix_bits = 0;
+        self.num_direct_distance_codes = 0;
+        self.num_dist_htrees = 0;
+        self.dist_context_map = &.{};
+        self.literal_htree = &.{};
+        self.chains = .{};
+        self.mtf_upper_bound = 63;
+    }
+
     pub fn resetForNewStream(self: *Decoder) void {
-        self.deinit();
-        self.* = init(self.allocator, self.options);
+        self.reset(null);
+    }
+
+    /// Decompresses a complete slice of Brotli data into an allocated buffer.
+    pub fn decompress(self: *Decoder, input: []const u8) ![]u8 {
+        self.reset(null);
+        var capacity: usize = @max(@as(usize, 4096), input.len *| 4);
+        var out = try self.allocator.alloc(u8, capacity);
+        errdefer self.allocator.free(out);
+
+        var in: []const u8 = input;
+        var total: u64 = 0;
+        while (true) {
+            var avail: []u8 = out[@intCast(total)..];
+            switch (self.decompressStream(&in, &avail, &total)) {
+                .success => {
+                    const final_len: usize = @intCast(total);
+                    if (out.len == final_len) return out;
+                    return try self.allocator.realloc(out, final_len);
+                },
+                .needs_more_output => {
+                    capacity = capacity *| 2;
+                    if (self.options.maxOutputSize) |limit| {
+                        if (capacity > limit) {
+                            if (total >= limit) return error.ResourceLimitExceeded;
+                            capacity = limit;
+                        }
+                    }
+                    out = try self.allocator.realloc(out, capacity);
+                },
+                .needs_more_input => return error.TruncatedInput,
+                .err => return self.err.toError(),
+            }
+        }
+    }
+
+    /// Decompresses into a caller-provided fixed buffer.
+    pub fn decompressInto(self: *Decoder, input: []const u8, output: []u8) !usize {
+        self.reset(null);
+        var in: []const u8 = input;
+        var avail: []u8 = output;
+        var total: u64 = 0;
+        switch (self.decompressStream(&in, &avail, &total)) {
+            .success => return @intCast(total),
+            .needs_more_output => return error.ResourceLimitExceeded,
+            .needs_more_input => return error.TruncatedInput,
+            .err => return self.err.toError(),
+        }
     }
 
     fn cleanupAfterMetablock(self: *Decoder, free_all: bool) void {
@@ -520,7 +651,7 @@ pub const Decoder = struct {
     /// Decodes WBITS; precondition: accumulator has >= 8 bits.
     fn decodeWindowBits(self: *Decoder, br: *BitReader) ErrorCode {
         var n: u64 = 0;
-        const large_window = self.options.large_window;
+        const large_window = self.options.largeWindow;
         self.large_window = false;
         n = br.getBits(1);
         br.dropBits(1);
@@ -1027,13 +1158,9 @@ pub const Decoder = struct {
 
     /// Inverse move-to-front transform over `v` (see decode.c).
     fn inverseMoveToFrontTransform(self: *Decoder, v: []u8) void {
-        // Reinitialize elements that could have been changed, keeping only
-        // mtf[0 .. upper_bound*4+4] initialized fresh each call.
         var mtf_u8: [256]u8 = undefined;
-        const upper_bound = self.mtf_upper_bound;
-        var i: usize = 0;
-        while (i <= upper_bound * 4 + 3) : (i += 1) {
-            mtf_u8[i] = @intCast(i & 0xFF);
+        for (0..256) |i| {
+            mtf_u8[i] = @intCast(i);
         }
 
         var new_upper: u8 = 0;
@@ -1329,6 +1456,11 @@ pub const Decoder = struct {
         if (self.meta_block_remaining_len < 0) {
             return fail(.format_block_length_1);
         }
+        if (self.options.maxOutputSize) |max_out| {
+            if (self.partial_pos_out + num_written > max_out) {
+                return fail(.resource_limit);
+            }
+        }
         const src = self.ringbuffer[start..][0..num_written];
         @memcpy(available_out.*[0..num_written], src);
         available_out.* = available_out.*[num_written..];
@@ -1363,6 +1495,10 @@ pub const Decoder = struct {
 
     /// Allocates or grows the ring buffer; keeps existing contents.
     fn ensureRingBuffer(self: *Decoder) bool {
+        if (self.options.ringBufferSizeLimit != 0 and self.new_ringbuffer_size > self.options.ringBufferSizeLimit) {
+            self.err = .resource_limit;
+            return false;
+        }
         const old = self.ringbuffer;
         if (self.ringbuffer_size == self.new_ringbuffer_size) return true;
 
@@ -1398,7 +1534,7 @@ pub const Decoder = struct {
         output_size +%= @intCast(@max(self.meta_block_remaining_len, 0));
         min_size = @max(min_size, output_size);
 
-        if (self.options.canny_ringbuffer_allocation) {
+        if (self.options.cannyRingbufferAllocation) {
             while ((new_ringbuffer_size >> 1) >= min_size) {
                 new_ringbuffer_size >>= 1;
             }
@@ -1450,6 +1586,7 @@ pub const Decoder = struct {
     /// Copies an uncompressed metablock to the output; resumable.
     fn copyUncompressedBlockToOutput(self: *Decoder, available_out: *[]u8, total_out: ?*u64) ErrorCode {
         if (!self.ensureRingBuffer()) {
+            if (self.err == .resource_limit) return .resource_limit;
             return fail(.alloc_ring_buffer_1);
         }
         while (true) {
@@ -1552,6 +1689,10 @@ pub const Decoder = struct {
         var code: u64 = 0;
         const saved = br.*;
 
+        if (self.dist_htree_index >= self.distance_hgroup.num_htrees) {
+            self.err = fail(.format_distance);
+            return false;
+        }
         const distance_tree = self.distance_hgroup.get(self.dist_htree_index);
         if (!readSymbolSafe(distance_tree, br, &code)) return false;
         self.block_length[2] -= 1;
@@ -2017,7 +2158,7 @@ pub const Decoder = struct {
                             std.debug.assert(self.buffer_length < 8);
                             self.buffer[self.buffer_length] = input[0];
                             self.buffer_length += 1;
-                            self.br.setInput(self.buffer[0..self.buffer_length]);
+                            self.br.input = self.buffer[0..self.buffer_length];
                             input = input[1..];
                             continue :state_loop;
                         }
@@ -2090,13 +2231,15 @@ pub const Decoder = struct {
                 .initialize => {
                     self.max_backward_distance =
                         (@as(i64, 1) << @intCast(self.window_bits)) - constants.WINDOW_GAP;
-                    self.block_type_trees = self.allocator.alloc(
-                        HuffmanCode,
-                        3 * (huff.HUFFMAN_MAX_SIZE_258 + huff.HUFFMAN_MAX_SIZE_26),
-                    ) catch {
-                        result = fail(.alloc_block_type_trees);
-                        continue :state_loop;
-                    };
+                    if (self.block_type_trees.len == 0) {
+                        self.block_type_trees = self.allocator.alloc(
+                            HuffmanCode,
+                            3 * (huff.HUFFMAN_MAX_SIZE_258 + huff.HUFFMAN_MAX_SIZE_26),
+                        ) catch {
+                            result = fail(.alloc_block_type_trees);
+                            continue :state_loop;
+                        };
+                    }
                     @memset(self.block_type_trees, .{ .bits = 0, .value = 0 });
                     self.block_len_trees =
                         self.block_type_trees[3 * huff.HUFFMAN_MAX_SIZE_258 ..];
@@ -2307,7 +2450,11 @@ pub const Decoder = struct {
                     self.dist_context_map_slice = self.dist_context_map;
                     self.htree_command = self.insert_copy_hgroup.get(0);
                     if (!self.ensureRingBuffer()) {
-                        result = fail(.alloc_ring_buffer_2);
+                        if (self.err == .resource_limit) {
+                            result = .resource_limit;
+                        } else {
+                            result = fail(.alloc_ring_buffer_2);
+                        }
                         continue :state_loop;
                     }
                     self.calculateDistanceLut();
@@ -2397,6 +2544,62 @@ pub const Decoder = struct {
         return self.saveErrorCode(result);
     }
 };
+
+/// Decompress a complete Brotli stream in one call with default options.
+pub fn decompress(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    return decompressWithOptions(allocator, input, .{});
+}
+
+/// Decompress a complete Brotli stream with explicit options (window size, limits, dictionary, etc.).
+pub fn decompressWithOptions(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    options: Options,
+) ![]u8 {
+    var capacity: usize = @max(@as(usize, 4096), input.len *| 4);
+    while (true) {
+        var dec = Decoder.init(allocator, options);
+        defer dec.deinit();
+
+        var in: []const u8 = input;
+        var out = try allocator.alloc(u8, capacity);
+        defer allocator.free(out);
+
+        var avail: []u8 = out;
+        var total: u64 = 0;
+        switch (dec.decompressStream(&in, &avail, &total)) {
+            .success => {
+                const result = try allocator.alloc(u8, @intCast(total));
+                @memcpy(result, out[0..@intCast(total)]);
+                return result;
+            },
+            .needs_more_output => {
+                capacity = capacity *| 2;
+                continue;
+            },
+            .needs_more_input => return error.TruncatedInput,
+            .err => return dec.errorCode().toError(),
+        }
+    }
+}
+
+/// Decompress into a caller-provided output buffer.
+pub fn decompressInto(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    output: []u8,
+) !usize {
+    var dec = Decoder.init(allocator, .{});
+    defer dec.deinit();
+    var in: []const u8 = input;
+    var avail: []u8 = output;
+    var total: u64 = 0;
+    switch (dec.decompressStream(&in, &avail, &total)) {
+        .success => {},
+        else => return error.BrotliDecompressionError,
+    }
+    return @intCast(total);
+}
 
 const testing = std.testing;
 
