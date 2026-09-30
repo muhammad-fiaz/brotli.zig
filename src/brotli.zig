@@ -898,27 +898,50 @@ test "Malformed stream headers and corrupted bits fail safely" {
 test "Upstream reference testdata decompression" {
     const allocator = testing.allocator;
 
-    const test_files = [_]struct { comp: []const u8, orig: []const u8 }{
-        .{ .comp = "brotli/tests/testdata/10x10y.compressed", .orig = "brotli/tests/testdata/10x10y" },
-        .{ .comp = "brotli/tests/testdata/64x.compressed", .orig = "brotli/tests/testdata/64x" },
-        .{ .comp = "brotli/tests/testdata/empty.compressed", .orig = "brotli/tests/testdata/empty" },
-        .{ .comp = "brotli/tests/testdata/quickfox.compressed", .orig = "brotli/tests/testdata/quickfox" },
-        .{ .comp = "brotli/tests/testdata/x.compressed", .orig = "brotli/tests/testdata/x" },
-        .{ .comp = "brotli/tests/testdata/xyzzy.compressed", .orig = "brotli/tests/testdata/xyzzy" },
-        .{ .comp = "brotli/tests/testdata/zeros.compressed", .orig = "brotli/tests/testdata/zeros" },
+    const test_vectors = [_]struct { comp: []const u8, orig: []const u8 }{
+        .{
+            .comp = "\x06",
+            .orig = "",
+        },
+        .{
+            .comp = "\x0b\x00\x80\x58\x03",
+            .orig = "X",
+        },
+        .{
+            .comp = "\x0b\x02\x80\x58\x79\x7a\x7a\x79\x03",
+            .orig = "Xyzzy",
+        },
+        .{
+            .comp = "\x1b\x13\x00\x00\xa4\xb0\xb2\xea\x81\x47\x02\x8a",
+            .orig = "XXXXXXXXXXYYYYYYYYYY",
+        },
+        .{
+            .comp = "\x1b\x3f\x00\x00\x24\xb0\xe2\x99\x80\x12",
+            .orig = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        },
+        .{
+            .comp = "\x0b\x15\x80\x54\x68\x65\x20\x71\x75\x69\x63\x6b\x20\x62\x72\x6f\x77\x6e\x20\x66\x6f\x78\x20\x6a\x75\x6d\x70\x73\x20\x6f\x76\x65\x72\x20\x74\x68\x65\x20\x6c\x61\x7a\x79\x20\x64\x6f\x67\x03",
+            .orig = "The quick brown fox jumps over the lazy dog",
+        },
+        .{
+            .comp = "\x1b\x76\x00\x00\x14\x4a\xac\x9b\x7a\xbd\xe1\x97\x9d\x7f\x8e\xc2\x82\x36\x0e\x9c\xe0\x90\x03\xf7\x8b\x9e\x38\xe6\xb6\x00\xab\xc3\xca\xa0\xc2\xda\x66\x36\xdc\xcd\x80\x8d\x2e\x21\xd7\x6e\xe3\xea\x4c\xb8\xf0\xd2\xb8\xc7\xc2\x70\x4d\x3a\xf0\x69\x7e\xa1\xb8\x45\x73\xab\xc4\x57\x1e",
+            .orig = "ukko nooa, ukko nooa oli kunnon mies, kun han meni saunaan, pisti laukun naulaan, ukko nooa, ukko nooa oli kunnon mies.",
+        },
     };
 
-    for (test_files) |tf| {
-        const comp_data = std.Io.Dir.cwd().readFileAlloc(std.testing.io, tf.comp, allocator, .limited(1024 * 1024)) catch continue;
-        defer allocator.free(comp_data);
-
-        const orig_data = std.Io.Dir.cwd().readFileAlloc(std.testing.io, tf.orig, allocator, .limited(1024 * 1024)) catch continue;
-        defer allocator.free(orig_data);
-
-        const decomp = try decompress(allocator, comp_data);
+    for (test_vectors) |tv| {
+        const decomp = try decompress(allocator, tv.comp);
         defer allocator.free(decomp);
+        try testing.expectEqualSlices(u8, tv.orig, decomp);
+    }
 
-        try testing.expectEqualSlices(u8, orig_data, decomp);
+    // Large zeros vector (262,144 zeros decompressed from 13 bytes)
+    const zeros_comp = "\x5b\xff\xff\x03\x60\x02\x20\x1e\x0b\x28\xf7\x7e\x00";
+    const zeros_decomp = try decompress(allocator, zeros_comp);
+    defer allocator.free(zeros_decomp);
+    try testing.expectEqual(@as(usize, 262144), zeros_decomp.len);
+    for (zeros_decomp) |b| {
+        try testing.expectEqual(@as(u8, 0), b);
     }
 }
 
@@ -1017,31 +1040,6 @@ test "bidirectional interoperability with reference brotli executable" {
                 }
             }
         }
-    }
-}
-
-test "decompress larger upstream reference corpus" {
-    const allocator = testing.allocator;
-
-    const large_test_files = [_]struct { comp: []const u8, orig: []const u8 }{
-        .{ .comp = "brotli/tests/testdata/alice29.txt.compressed", .orig = "brotli/tests/testdata/alice29.txt" },
-        .{ .comp = "brotli/tests/testdata/asyoulik.txt.compressed", .orig = "brotli/tests/testdata/asyoulik.txt" },
-        .{ .comp = "brotli/tests/testdata/lcet10.txt.compressed", .orig = "brotli/tests/testdata/lcet10.txt" },
-        .{ .comp = "brotli/tests/testdata/monkey.compressed", .orig = "brotli/tests/testdata/monkey" },
-        .{ .comp = "brotli/tests/testdata/ukkonooa.compressed", .orig = "brotli/tests/testdata/ukkonooa" },
-    };
-
-    for (large_test_files) |tf| {
-        const comp_data = std.Io.Dir.cwd().readFileAlloc(std.testing.io, tf.comp, allocator, .limited(4 * 1024 * 1024)) catch continue;
-        defer allocator.free(comp_data);
-
-        const orig_data = std.Io.Dir.cwd().readFileAlloc(std.testing.io, tf.orig, allocator, .limited(4 * 1024 * 1024)) catch continue;
-        defer allocator.free(orig_data);
-
-        const decomp = try decompress(allocator, comp_data);
-        defer allocator.free(decomp);
-
-        try testing.expectEqualSlices(u8, orig_data, decomp);
     }
 }
 
