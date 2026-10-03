@@ -59,6 +59,32 @@ pub fn decompressWithOptions(
 
 One-shot decompression with explicit options, including `largeWindow` support (LGWIN up to 30), custom dictionary back-references, and safety limits (`maxOutputSize`, `ringBufferSizeLimit`). See [DecompressionOptions](/api/decompress-options).
 
+### `compressWithSharedDictionary`
+
+```zig
+pub fn compressWithSharedDictionary(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    dict: *const SharedDictionary,
+    options: CompressionOptions,
+) ![]u8
+```
+
+Compresses an input slice referencing a pre-populated compound `SharedDictionary`.
+
+### `decompressWithSharedDictionary`
+
+```zig
+pub fn decompressWithSharedDictionary(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    dict: *const SharedDictionary,
+    options: DecompressionOptions,
+) ![]u8
+```
+
+Decompresses a Brotli bitstream referencing an identical pre-populated compound `SharedDictionary`.
+
 ### `decompressInto`
 
 ```zig
@@ -105,6 +131,7 @@ Streams compressed Brotli data from a `std.Io.Reader` directly to a `std.Io.Writ
 | `Decompressor` / `Decoder` | `src/decompress/decode.zig` | [Decompressor](/api/decompressor) |
 | `StreamingCompressor` | `src/streaming/compressor.zig` | [StreamingCompressor](/api/stream-compressor) |
 | `StreamingDecompressor` | `src/streaming/decompressor.zig` | [StreamingDecompressor](/api/stream-decompressor) |
+| `SharedDictionary` | `src/common/shared_dictionary.zig` | [Dictionaries](/api/dict) |
 | `CompressionOptions` | `src/compress/encode.zig` | [CompressionOptions](/api/compress-options) |
 | `DecompressionOptions` | `src/decompress/decode.zig` | [DecompressionOptions](/api/decompress-options) |
 | `Error` | `src/brotli.zig` | [Errors](/api/errors) |

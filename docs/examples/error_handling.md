@@ -5,7 +5,7 @@ description: Corruption, truncation, and detailed decoder diagnostics.
 
 # Error Handling
 
-`examples/error_handling.zig` — every failure surfaces as a typed Zig error,
+`examples/error_handling.zig` - every failure surfaces as a typed Zig error,
 and the streaming decoder records a precise `ErrorCode`.
 
 ## Client Code

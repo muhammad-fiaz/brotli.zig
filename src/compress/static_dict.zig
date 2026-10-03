@@ -1,7 +1,7 @@
 //! Static-dictionary word matching for the encoder.
 //!
-//! Builds a hash index over the embedded RFC 7932 word list — including the
-//! uppercase-first and uppercase-all variants — so the match finder can emit
+//! Builds a hash index over the embedded RFC 7932 word list - including the
+//! uppercase-first and uppercase-all variants - so the match finder can emit
 //! dictionary back-references for text present in the built-in corpus.
 //! Every transform index is resolved from the shared 121-entry transform
 //! table, keeping encoder and decoder views of the format identical.
@@ -42,7 +42,7 @@ fn strSlice(id: usize) []const u8 {
 }
 
 fn typeAt(ti: usize) transforms.TransformType {
-    return @fromBackingInt(@intCast(tables.transforms_data[ti * 3 + 1]));
+    return @enumFromInt(tables.transforms_data[ti * 3 + 1]);
 }
 
 /// Resolves the transform whose (prefix, type, suffix) triple matches, or
@@ -387,7 +387,7 @@ const cutoffIds: [10]?u16 = blk: {
     var ids: [10]?u16 = @splat(null);
     var n: u32 = 2;
     while (n <= 9) : (n += 1) {
-        const tt: transforms.TransformType = @fromBackingInt(@intCast(n));
+        const tt: transforms.TransformType = @enumFromInt(@as(u8, @intCast(n)));
         ids[n] = tIdOrNull("", tt, "");
     }
     break :blk ids;

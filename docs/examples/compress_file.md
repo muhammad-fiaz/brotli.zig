@@ -5,7 +5,7 @@ description: One-shot file compression across quality levels.
 
 # Compress File
 
-`examples/compress_file.zig` — builds a deterministic 256 KiB pseudo-text
+`examples/compress_file.zig` - builds a deterministic 256 KiB pseudo-text
 corpus, compresses it at quality levels 1, 5, 9, and 11, writes the
 quality-9 result to `sample.br`, then reads it back and verifies a full
 round trip.

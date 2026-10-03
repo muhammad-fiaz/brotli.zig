@@ -871,7 +871,7 @@ pub const Encoder = struct {
         const wb = self.window_bits;
         if (self.options.largeWindow) {
             // Large-window marker: `1`, `000`, `001`, reserved zero, then six
-            // window bits — 14 bits total.
+            // window bits - 14 bits total.
             self.w.put(1, 1);
             self.w.put(3, 0);
             self.w.put(3, 1);
@@ -1398,7 +1398,7 @@ pub const Encoder = struct {
 
         // One two-bit context mode per literal block type.
         {
-            const mode_val: u64 = if (cm) |c| @backingInt(c.mode) else 0;
+            const mode_val: u64 = if (cm) |c| @intFromEnum(c.mode) else 0;
             const ntypes: usize = if (split) |s| @intCast(s.ntypes) else 1;
             var t: usize = 0;
             while (t < ntypes) : (t += 1) self.w.put(2, mode_val);
@@ -1419,7 +1419,7 @@ pub const Encoder = struct {
         // Distance tree count: always a single tree.
         self.w.put(1, 0); // NTREESD = 1
 
-        // Literal trees first, then command, then distance — the exact order
+        // Literal trees first, then command, then distance - the exact order
         // the decoder consumes them in.
         var lit_depths: [MAX_LIT_TREES][256]u8 = undefined;
         var lit_codes: [MAX_LIT_TREES][256]u16 = undefined;

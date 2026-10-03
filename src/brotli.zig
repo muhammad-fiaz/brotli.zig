@@ -1,5 +1,5 @@
 //! Native Zig implementation of the Brotli compressed data format
-//! (RFC 7932 / Large Window Brotli) — public client API facade.
+//! (RFC 7932 / Large Window Brotli) - public client API facade.
 //!
 //! Provides a thin, idiomatic client surface for Brotli compression, decompression,
 //! streaming I/O, format inspection, and configuration.

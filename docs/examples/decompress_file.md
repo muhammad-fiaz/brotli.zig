@@ -5,7 +5,7 @@ description: One-shot file decompression with verification.
 
 # Decompress File
 
-`examples/decompress_file.zig` — reads `sample.br` from disk (or
+`examples/decompress_file.zig` - reads `sample.br` from disk (or
 generates it if missing), decompresses it, and verifies byte-for-byte
 equality against the original corpus.
 

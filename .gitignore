@@ -31,5 +31,6 @@ Thumbs.db
 /sample.txt
 /sample.br
 
-# Upstream reference repository
-/brotli/
+# Interoperability test temporaries
+/interop_*
+

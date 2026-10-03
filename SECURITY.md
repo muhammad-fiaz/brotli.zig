@@ -34,7 +34,7 @@ advisory once a patch is available.
 `brotli.zig` decompresses untrusted input by design. The following guarantees apply:
 
 - Malformed, truncated, or hostile compressed data must never cause out-of-bounds
-  reads/writes, undefined behavior, or hangs — only a returned `brotli.Error`
+  reads/writes, undefined behavior, or hangs - only a returned `brotli.Error`
   (e.g., `error.CorruptStream`, `error.TruncatedInput`, `error.InvalidHeader`) or
   a failure code via `ErrorCode`.
 - Decompression validates stream header window bits (including Large Window Brotli bounds),

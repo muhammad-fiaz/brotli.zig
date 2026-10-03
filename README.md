@@ -14,7 +14,7 @@
 <a href="https://pay.muhammadfiaz.com"><img src="https://img.shields.io/badge/Sponsor-pay.muhammadfiaz.com-ff69b4?style=flat&logo=heart" alt="Sponsor"></a>
 <a href="https://github.com/sponsors/muhammad-fiaz"><img src="https://img.shields.io/badge/Sponsor-GitHub-pink?style=social&logo=github" alt="GitHub Sponsors"></a>
 
-<p><em>Production-grade, native Zig implementation of the Brotli RFC 7932 compression format targeting Zig 0.17.0.</em></p>
+<p><em>High-performance, native Brotli compression for Zig.</em></p>
 
 <b><a href="https://muhammad-fiaz.github.io/brotli.zig/">Documentation</a> |
 <a href="https://muhammad-fiaz.github.io/brotli.zig/api/">API Reference</a> |
@@ -23,7 +23,7 @@
 
 </div>
 
-`brotli.zig` is a complete, native Zig implementation of the [Brotli](https://www.brotli.org/) compressed-data format (RFC 7932, including Large Window Brotli) targeting **Zig 0.17.0**, built entirely from scratch in Zig. No C bindings, no libc, no external dependencies.
+`brotli.zig` is a complete native Zig implementation of the [Brotli](https://www.brotli.org/) compression format (RFC 7932 and Large Window Brotli). Built from scratch in pure Zig with zero C bindings, no libc dependency, and full support for one-shot and streaming operations.
 
 > [!TIP]
 > If you build with brotli.zig, make sure to give it a star!
@@ -31,16 +31,15 @@
 > [!NOTE]
 > `brotli.zig` implements the RFC 7932 format specification and Large Window extension. The upstream [Brotli project](https://github.com/google/brotli) is used as a reference for format behavior, compatibility requirements, and interoperability testing.
 >
-> **Pure Zig — zero C dependencies:**
-> - **Streaming decoder state machine** — window bits (incl. large window up to 30), metablock headers, metadata blocks, uncompressed metablocks, partial input/output resumption across arbitrary byte splits.
-> - **Huffman decoding & encoding** — canonical codes, code-length tables, two-level explicit tables, simple/complex tree construction.
-> - **Context modeling** — 2nd-order literal context models, context maps with inverse move-to-front and RLE decoding.
+> - **Streaming decoder state machine** - window bits (incl. large window up to 30), metablock headers, metadata blocks, uncompressed metablocks, partial input/output resumption across arbitrary byte splits.
+> - **Huffman decoding & encoding** - canonical codes, code-length tables, two-level explicit tables, simple/complex tree construction.
+> - **Context modeling** - 2nd-order literal context models, context maps with inverse move-to-front and RLE decoding.
 > - **LZ77 back-references** with ring-buffer history and distance caches.
-> - **Static dictionary** — complete 122,784-byte RFC 7932 static dictionary with 121 transforms.
-> - **Custom dictionaries** — attach shared raw dictionaries to encoder and decoder.
-> - **Native encoder** — hash-chain match finder, Huffman coding, block splitting, quality levels 0–11, literal block switching, NPOSTFIX/NDIRECT distance coding, metadata metablocks.
-> - **Progress callbacks** — monitor streaming compression progress for large inputs.
-> - **Reusable contexts** — initialize once, compress/decompress multiple streams via `reset()`, eliminating allocation churn.
+> - **Static dictionary** - complete 122,784-byte RFC 7932 static dictionary with 121 transforms.
+> - **Custom dictionaries** - attach shared raw dictionaries to encoder and decoder.
+> - **Native encoder** - hash-chain match finder, Huffman coding, block splitting, quality levels 0-11, literal block switching, NPOSTFIX/NDIRECT distance coding, metadata metablocks.
+> - **Progress callbacks** - monitor streaming compression progress for large inputs.
+> - **Reusable contexts** - initialize once, compress/decompress multiple streams via `reset()`, eliminating allocation churn.
 
 ---
 
@@ -51,7 +50,7 @@
 |---|---|
 | **One-shot Compression** | `brotli.compress(allocator, data)` for single-call compression |
 | **One-shot Decompression** | `brotli.decompress(allocator, data)` for single-call decompression |
-| **Compression Levels** | Quality 0–11 via `brotli.compressWithOptions(allocator, data, .{ .quality = ... })` |
+| **Compression Levels** | Quality 0-11 via `brotli.compressWithOptions(allocator, data, .{ .quality = ... })` |
 | **Reusable Compressor** | `brotli.Compressor` (`init`, `compress`, `reset`, `deinit`) |
 | **Reusable Decompressor** | `brotli.Decompressor` (`init`, `decompress`, `decompressInto`, `reset`, `deinit`) |
 | **I/O Streaming** | `compressStream` and `decompressStream` with Zig 0.17 `std.Io.Reader` & `std.Io.Writer` |
@@ -61,7 +60,7 @@
 | **Shared / Compound Dictionaries** | `brotli.SharedDictionary` supporting up to 15 compound chunks |
 | **UTF-8 Heuristic Modeling** | Automatic UTF-8 detection and context modeling optimization |
 | **Built-in Static Dictionary** | Complete RFC 7932 word list + 121 transforms |
-| **Window Sizes** | LGWIN 10–24 standard; large-window up to 30 |
+| **Window Sizes** | LGWIN 10-24 standard; large-window up to 30 |
 | **Modes** | Generic (`.generic`), text (`.text`), and font (`.font`) |
 | **Resource Limits** | `maxOutputSize` and `ringBufferSizeLimit` on `DecompressionOptions` |
 | **Canonical Error Set** | Coherent `brotli.Error` error set mapped from internal codes |
@@ -119,7 +118,7 @@ zig build -Dtarget=x86-windows
 
 ## Installation
 
-### Method 1: Zig Fetch (Recommended) — Latest Release
+### Method 1: Zig Fetch (Recommended) - Latest Release
 
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.4.tar.gz
@@ -406,7 +405,7 @@ This project does not depend on the upstream implementation.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## Author
 

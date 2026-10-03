@@ -5,7 +5,7 @@ description: Multiple independent streams on one Decoder.
 
 # Reusable Context
 
-`examples/reusable_context.zig` — allocates a single `Decoder` on the
+`examples/reusable_context.zig` - allocates a single `Decoder` on the
 heap and decompresses two consecutive streams through it by calling
 `resetForNewStream` between them.
 
@@ -62,7 +62,7 @@ two streams on one context: 0, 0 bytes
 - `resetForNewStream()` clears internal state (ring buffer, distance
   history, block-type tracking) without freeing the allocator-backed
   buffers, making it cheap to reuse the same `Decoder` for many streams.
-- This pattern is useful in servers handling many short messages —
+- This pattern is useful in servers handling many short messages -
   allocate once, decode many.
 
 Run it:

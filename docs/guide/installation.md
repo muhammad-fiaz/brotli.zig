@@ -7,8 +7,8 @@ description: How to install and set up brotli.zig in your Zig project.
 
 ## Requirements
 
-- **Zig 0.17.0** (required) — download from [ziglang.org](https://ziglang.org/download/)
-- No external dependencies required — pure Zig implementation
+- **Zig 0.17.0** (required) - download from [ziglang.org](https://ziglang.org/download/)
+- No external dependencies required - pure Zig implementation
 - Supported OS: Windows 10+, Linux, macOS
 - Supported architectures: x86_64, aarch64, x86
 
@@ -18,7 +18,7 @@ This library (`v0.0.4+`) requires **Zig 0.17.0** as declared in `build.zig.zon` 
 
 ## Setup
 
-### Method 1: Zig Fetch (Recommended) — Latest Release
+### Method 1: Zig Fetch (Recommended) - Latest Release
 
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.4.tar.gz

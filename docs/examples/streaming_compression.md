@@ -5,7 +5,7 @@ description: Chunk-based compression with StreamingCompressor and progress callb
 
 # Streaming Compression
 
-`examples/streaming_compression.zig` — feeds 4 MiB of pseudo-text in 32 KiB
+`examples/streaming_compression.zig` - feeds 4 MiB of pseudo-text in 32 KiB
 chunks through `StreamingCompressor`, collects output slices, then calls
 `finish` to emit the final block. A progress callback counts invocations.
 
@@ -84,7 +84,7 @@ streamed 4194304 bytes -> 685280 bytes (16.3%); round trip OK
 ## Explanation
 
 - `StreamingCompressor` owns the encoder state internally. Each call to
-  `process` flushes any internally buffered output as an owned slice — the
+  `process` flushes any internally buffered output as an owned slice - the
   caller must free it.
 - `finish` writes the final empty metablock with `ISLAST=1` and returns
   the remaining output.

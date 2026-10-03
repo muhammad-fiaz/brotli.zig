@@ -30,7 +30,7 @@ pub const TransformType = enum(u8) {
     shift_all = 22,
 };
 
-pub const MAX_CUT_OFF = @backingInt(TransformType.omit_last_9);
+pub const MAX_CUT_OFF = @intFromEnum(TransformType.omit_last_9);
 
 /// RFC 7932 transforms string data: length-prefixed strings.
 pub const prefix_suffix = tables.prefix_suffix;
@@ -47,7 +47,7 @@ inline fn prefixId(i: usize) u8 {
     return transforms_data[i * 3 + 0];
 }
 inline fn typeOf(i: usize) TransformType {
-    return @fromBackingInt(@intCast(transforms_data[i * 3 + 1]));
+    return @enumFromInt(transforms_data[i * 3 + 1]);
 }
 inline fn suffixId(i: usize) u8 {
     return transforms_data[i * 3 + 2];
@@ -133,7 +133,7 @@ pub fn transformDictionaryWord(
 ) usize {
     var idx: usize = 0;
     const t = typeOf(transform_idx);
-    const ti = @backingInt(t);
+    const ti = @intFromEnum(t);
     var wlen: i32 = @intCast(word.len);
     // Prefix copy.
     const pre = prefixOf(transform_idx);
@@ -141,12 +141,12 @@ pub fn transformDictionaryWord(
     idx += pre.len;
     // Word copy with omission.
     var wi: usize = 0;
-    if (ti <= @backingInt(TransformType.omit_last_9)) {
+    if (ti <= @intFromEnum(TransformType.omit_last_9)) {
         wlen -= @intCast(ti);
-    } else if (ti >= @backingInt(TransformType.omit_first_1) and
-        ti <= @backingInt(TransformType.omit_first_9))
+    } else if (ti >= @intFromEnum(TransformType.omit_first_1) and
+        ti <= @intFromEnum(TransformType.omit_first_9))
     {
-        const skip: usize = ti - (@backingInt(TransformType.omit_first_1) - 1);
+        const skip: usize = ti - (@intFromEnum(TransformType.omit_first_1) - 1);
         wi += skip;
         wlen -= @intCast(skip);
     }

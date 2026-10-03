@@ -5,7 +5,7 @@ description: LSB-first bit packing and Huffman code reversal.
 
 # Bit Level
 
-`examples/bit_level.zig` — demonstrates the bit-level primitives that
+`examples/bit_level.zig` - demonstrates the bit-level primitives that
 underpin every Brotli header field and Huffman code: LSB-first packing,
 field extraction, and Huffman code bit-reversal.
 

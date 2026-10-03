@@ -37,7 +37,7 @@ const n = try sd.take(&buf);
 sc.setProgress(myCallback, &my_ctx);
 ```
 
-Fires during large streaming compressions — wire it to a progress bar.
+Fires during large streaming compressions - wire it to a progress bar.
 ## End of Input
 
 ```zig

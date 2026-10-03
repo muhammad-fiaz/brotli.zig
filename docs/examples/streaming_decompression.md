@@ -5,7 +5,7 @@ description: Chunk-based decompression with StreamingDecompressor.
 
 # Streaming Decompression
 
-`examples/streaming_decompression.zig` — feed compressed chunks with `feed`,
+`examples/streaming_decompression.zig` - feed compressed chunks with `feed`,
 drain decoded bytes with `take`.
 
 ## Client Code

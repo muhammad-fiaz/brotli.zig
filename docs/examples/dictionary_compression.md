@@ -5,7 +5,7 @@ description: Shared-dictionary compression round trip.
 
 # Dictionary Compression
 
-`examples/dictionary_compression.zig` — attach identical dictionary bytes on
+`examples/dictionary_compression.zig` - attach identical dictionary bytes on
 both sides so small payloads compress via back-references into the corpus.
 The encoder emits compact references into dictionary content; only a decoder
 with the identical data attached can expand them.
@@ -89,7 +89,7 @@ pub fn main() !void {
   the `Encoder` and `Decoder` via `attachDictionary()`.
 - The input heavily overlaps the dictionary. Without the dictionary the
   encoder has nothing to reference, but with it most of the input
-  collapses into back-references — producing a much smaller stream.
+  collapses into back-references - producing a much smaller stream.
 - Decoding **without** the dictionary fails (or produces garbage) because
   the back-references point outside the stream. Decoding **with** the
   identical dictionary reproduces the input exactly.

@@ -40,9 +40,8 @@ zig build docs             # Generate documentation
 
 ```
 src/           # 100% Native Zig Brotli codec implementation
-brotli/        # Upstream reference C tree (reference only)
 examples/      # Example programs
-tests/         # Integration & interoperability test suites
+docs/          # VitePress documentation site
 ```
 
 ## Pull Requests

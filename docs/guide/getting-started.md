@@ -12,7 +12,7 @@ This library targets **Zig 0.17.0** (required). Download from [ziglang.org](http
 
 | Zig Version | Status |
 |---|---|
-| 0.17.0 | Supported — required for this library |
+| 0.17.0 | Supported - required for this library |
 :::
 
 ## Quick Start
@@ -138,8 +138,8 @@ This project does not depend on the upstream implementation.
 
 ## What's Next
 
-- [Installation](/guide/installation) — Detailed setup instructions
-- [Compression](/guide/compression) — All compression options
-- [Decompression](/guide/decompression) — Decompression details
-- [Streaming](/guide/streaming) — Chunk-based processing
-- [Dictionaries](/guide/dictionaries) — Dictionary compression
+- [Installation](/guide/installation) - Detailed setup instructions
+- [Compression](/guide/compression) - All compression options
+- [Decompression](/guide/decompression) - Decompression details
+- [Streaming](/guide/streaming) - Chunk-based processing
+- [Dictionaries](/guide/dictionaries) - Dictionary compression

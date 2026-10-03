@@ -23,6 +23,7 @@ pub const CompressionOptions = struct {
     nPostfix: u32 = 0,
     nDirect: u32 = 0,
     customDictionary: ?[]const u8 = null,
+    sharedDictionary: ?*const SharedDictionary = null,
     progress: ?ProgressCallback = null,
     progressCtx: ?*anyopaque = null,
 };
@@ -42,6 +43,7 @@ pub const CompressionOptions = struct {
 | `nPostfix` | `u32` | `0` | Number of postfix bits for distance coding (`0..3`). Clamped to `constants.MAX_NPOSTFIX`. |
 | `nDirect` | `u32` | `0` | Number of direct distance codes (`0..120`). Clamped to `15 << nPostfix`. |
 | `customDictionary` | `?[]const u8` | `null` | Pre-attached raw dictionary for small-payload compression. |
+| `sharedDictionary` | `?*const SharedDictionary` | `null` | Compound dictionary container holding up to 15 prefix chunks. |
 | `progress` | `?ProgressCallback` | `null` | Optional callback invoked as chunks are compressed. |
 | `progressCtx` | `?*anyopaque` | `null` | User-defined context pointer passed to `progress`. |
 

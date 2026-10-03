@@ -109,9 +109,10 @@ comp.setProgress(onProgress, &ctx);
 
 ```zig
 pub fn attachDictionary(self: *Compressor, data: []const u8) bool
+pub fn attachSharedDictionary(self: *Compressor, dict: *const SharedDictionary) bool
 ```
 
-Attaches raw dictionary bytes to be used as history before the start of the uncompressed stream. Must be called before any data is fed to `compressStream` or `compress`. The dictionary slice is referenced (not copied) and must remain valid for the duration of the compression.
+Attaches raw dictionary bytes or a compound `SharedDictionary` to be used as history before the start of the uncompressed stream. Must be called before any data is fed to `compressStream` or `compress`. The dictionary slice is referenced (not copied) and must remain valid for the duration of the compression.
 
 ## Low-Level Streaming Operations
 

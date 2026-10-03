@@ -39,7 +39,7 @@ while (!sd.isFinished()) _ = try sd.take(&out_buf);
 ## Raw Decoder
 
 For exact control over input/output windows use `Decoder.decompressStream`
-directly — see [Decoder](../api/decompressor).
+directly - see [Decoder](../api/decompressor).
 
 ## Errors
 

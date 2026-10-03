@@ -22,6 +22,9 @@ pub const DecompressionOptions = struct {
     /// Optional raw custom dictionary data matching the compression side.
     customDictionary: ?[]const u8 = null,
 
+    /// Optional shared dictionary instance containing compound prefix chunks.
+    sharedDictionary: ?*const SharedDictionary = null,
+
     /// Safety limit on ring buffer size in bytes (0 = no limit).
     ringBufferSizeLimit: usize = 0,
 
@@ -40,6 +43,7 @@ pub const DecompressionOptions = struct {
 | `largeWindow` | `bool` | `false` | Accepts Large Window Brotli streams (LGWIN up to 30 bits, 1 GiB window). |
 | `cannyRingbufferAllocation` | `bool` | `true` | Incrementally sizes ring buffers to reduce RAM usage for small streams. |
 | `customDictionary` | `?[]const u8` | `null` | Pre-attached raw dictionary matching the dictionary used during compression. |
+| `sharedDictionary` | `?*const SharedDictionary` | `null` | Pre-attached compound dictionary containing prefix chunks. |
 | `ringBufferSizeLimit` | `usize` | `0` | Upper limit on allocated ring buffer capacity. If a stream demands a larger window, decoding aborts with `error.ResourceLimitExceeded`. `0` means unbounded. |
 | `maxOutputSize` | `?usize` | `null` | Maximum allowed uncompressed byte count. Protects against zip-bomb and decompression amplification attacks. |
 | `metadataCallbacks` | `?MetadataCallbacks` | `null` | Optional hooks fired when encountering RFC 7932 section 9.2 metadata blocks. |

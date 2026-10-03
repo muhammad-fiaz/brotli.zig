@@ -58,10 +58,10 @@ _ = try brotli.decompressInto(allocator, try brotli.compress(allocator, data), d
 
 | Quality | Use case |
 |---------|----------|
-| 0–2 | Real-time / throughput-bound |
-| 3–6 | Balanced |
-| 7–9 | Ratio-sensitive |
-| 10–11 | Maximum analysis (web assets) |
+| 0-2 | Real-time / throughput-bound |
+| 3-6 | Balanced |
+| 7-9 | Ratio-sensitive |
+| 10-11 | Maximum analysis (web assets) |
 
 ## Automatic Layout Selection
 
@@ -74,9 +74,9 @@ context maps, or literal block switching. No manual configuration needed.
 ```zig
 const compressed = try brotli.compressWithOptions(allocator, data, .{
     .quality = 11,
-    .lgwin = 30,
-    .large_window = true,
+    .lgWin = 30,
+    .largeWindow = true,
 });
 ```
 
-Requires `.large_window = true` on the decoder side. Not RFC-compatible.
+Requires `.largeWindow = true` on the decoder side. Not RFC-compatible.
