@@ -103,6 +103,7 @@ pub fn emitMetadata(self: *StreamingCompressor, payload: []const u8, writer: *st
 
 ```zig
 pub fn attachDictionary(self: *StreamingCompressor, data: []const u8) bool
+pub fn attachSharedDictionary(self: *StreamingCompressor, dict: *const SharedDictionary) bool
 pub fn setProgress(self: *StreamingCompressor, cb: ?ProgressCallback, ctx: ?*anyopaque) void
 ```
 

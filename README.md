@@ -58,6 +58,8 @@
 | **Streaming Compressor** | `StreamingCompressor` with `write(chunk, writer)` and `finish(writer)` |
 | **Streaming Decompressor** | `StreamingDecompressor` with `read(reader, writer)` and `feed(chunk)` / `take(out)` |
 | **Dictionary Compression** | `attachDictionary()` on both compressor and decompressor |
+| **Shared / Compound Dictionaries** | `brotli.SharedDictionary` supporting up to 15 compound chunks |
+| **UTF-8 Heuristic Modeling** | Automatic UTF-8 detection and context modeling optimization |
 | **Built-in Static Dictionary** | Complete RFC 7932 word list + 121 transforms |
 | **Window Sizes** | LGWIN 10–24 standard; large-window up to 30 |
 | **Modes** | Generic (`.generic`), text (`.text`), and font (`.font`) |
@@ -245,7 +247,7 @@ try sc.finish(&writer);
 var sd = brotli.StreamingDecompressor.init(allocator, .{});
 defer sd.deinit();
 
-sd.feed(chunk);
+try sd.feed(chunk);
 var out_buf: [4096]u8 = undefined;
 while (!sd.isFinished()) {
     const n = try sd.take(&out_buf);
@@ -273,6 +275,23 @@ defer allocator.free(compressed);
 
 const original = try decompressor.decompress(compressed);
 defer allocator.free(original);
+```
+
+### Shared & Compound Dictionaries
+
+```zig
+var shared_dict = brotli.SharedDictionary.init(allocator);
+defer shared_dict.deinit();
+
+_ = shared_dict.attach(.raw, prefix_chunk_1);
+_ = shared_dict.attach(.raw, prefix_chunk_2);
+
+// Single-call helper with compound dictionary
+const comp = try brotli.compressWithSharedDictionary(allocator, payload, &shared_dict, .{ .quality = 9 });
+defer allocator.free(comp);
+
+const decomp = try brotli.decompressWithSharedDictionary(allocator, comp, &shared_dict, .{});
+defer allocator.free(decomp);
 ```
 
 ---

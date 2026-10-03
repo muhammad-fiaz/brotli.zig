@@ -10,6 +10,8 @@ pub const Options = encoder.Options;
 pub const CompressionOptions = encoder.Options;
 pub const Encoder = encoder.Encoder;
 pub const ProgressCallback = encoder.ProgressCallback;
+pub const SharedDictionary = encoder.SharedDictionary;
+pub const SharedDictionaryType = encoder.SharedDictionaryType;
 
 /// Streaming and incremental compression context over the native Brotli encoder.
 ///
@@ -43,6 +45,11 @@ pub const StreamingCompressor = struct {
     /// Attaches a custom dictionary; must precede the first write/process call.
     pub fn attachDictionary(self: *StreamingCompressor, data: []const u8) bool {
         return self.inner.attachDictionary(data);
+    }
+
+    /// Attaches a shared dictionary containing compound prefix chunks; must precede the first write/process call.
+    pub fn attachSharedDictionary(self: *StreamingCompressor, dict: *const SharedDictionary) bool {
+        return self.inner.attachSharedDictionary(dict);
     }
 
     /// Streams an input chunk directly into a `std.Io.Writer`.
@@ -193,5 +200,44 @@ test "StreamingCompressor reset and reuse" {
 
     const out2 = try sc.finishAlloc();
     defer testing.allocator.free(out2);
+    try testing.expect(sc.isFinished());
+}
+
+test "StreamingCompressor 1-byte chunks and finish" {
+    var sc = StreamingCompressor.init(testing.allocator, .{ .quality = 4 });
+    defer sc.deinit();
+
+    const msg = "Streaming byte by byte through StreamingCompressor!";
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+
+    for (msg) |b| {
+        const chunk = try sc.process(&.{b});
+        defer testing.allocator.free(chunk);
+        if (chunk.len > 0) try out.appendSlice(testing.allocator, chunk);
+    }
+
+    const tail = try sc.finishAlloc();
+    defer testing.allocator.free(tail);
+    if (tail.len > 0) try out.appendSlice(testing.allocator, tail);
+
+    try testing.expect(sc.isFinished());
+    try testing.expect(out.items.len > 0);
+}
+
+test "StreamingCompressor attachSharedDictionary" {
+    var dict = SharedDictionary.init(testing.allocator);
+    defer dict.deinit();
+    const prefix_data = "https://example.com/api/v1/resource/";
+    _ = dict.attach(.raw, prefix_data);
+
+    var sc = StreamingCompressor.init(testing.allocator, .{ .quality = 5 });
+    defer sc.deinit();
+    try testing.expect(sc.attachSharedDictionary(&dict));
+
+    const chunk = try sc.process("12345/details");
+    defer testing.allocator.free(chunk);
+    const tail = try sc.finishAlloc();
+    defer testing.allocator.free(tail);
     try testing.expect(sc.isFinished());
 }

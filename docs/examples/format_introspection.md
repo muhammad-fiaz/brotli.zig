@@ -5,7 +5,7 @@ description: Version, quality bounds, window sizes, and format constants.
 
 # Format Introspection
 
-`examples/format_introspection.zig` â€” prints the library version string,
+`examples/format_introspection.zig` - prints the library version string,
 format spec version, quality and window-size ranges, and the alphabet
 sizes used by the encoder and decoder.
 

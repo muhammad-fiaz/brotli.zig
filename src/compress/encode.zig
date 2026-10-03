@@ -14,6 +14,11 @@ const context = @import("../common/context.zig");
 const dictionary = @import("../dictionary/dictionary.zig");
 const static_dict = @import("static_dict.zig");
 const prefix_ranges = @import("../common/prefix_ranges.zig");
+const shared_dict = @import("../common/shared_dictionary.zig");
+const utf8_util = @import("utf8_util.zig");
+
+pub const SharedDictionary = shared_dict.SharedDictionary;
+pub const SharedDictionaryType = shared_dict.SharedDictionaryType;
 
 pub const Mode = enum(u3) {
     generic = 0,
@@ -55,11 +60,12 @@ pub const Options = struct {
     nPostfix: u32 = 0,
     nDirect: u32 = 0,
     customDictionary: ?[]const u8 = null,
+    sharedDictionary: ?*const shared_dict.SharedDictionary = null,
     progress: ?ProgressCallback = null,
     progressCtx: ?*anyopaque = null,
 };
 
-/// Parameter identifiers, mirroring the C enumeration values.
+/// Parameter identifiers for encoder configuration.
 pub const paramMode: u32 = 0;
 pub const paramQuality: u32 = 1;
 pub const paramLgWin: u32 = 2;
@@ -507,6 +513,9 @@ pub const Encoder = struct {
         if (opts.customDictionary) |d| {
             _ = e.attachDictionary(d);
         }
+        if (opts.sharedDictionary) |sd| {
+            _ = e.attachSharedDictionary(sd);
+        }
         return e;
     }
 
@@ -552,6 +561,9 @@ pub const Encoder = struct {
         self.p2 = 0;
         if (self.options.customDictionary) |d| {
             _ = self.attachDictionary(d);
+        }
+        if (self.options.sharedDictionary) |sd| {
+            _ = self.attachSharedDictionary(sd);
         }
     }
 
@@ -658,22 +670,26 @@ pub const Encoder = struct {
     pub fn attachDictionary(self: *Encoder, data: []const u8) bool {
         if (data.len == 0) return true; // soft no-op
         if (data.len > (1 << 24)) return false;
-        if (self.started or self.buf.items.len != 0 or self.dict_applied) return false;
-        self.custom_dict = data;
+        if (self.started or self.input_total_seen != 0) return false;
+        if (self.dict_front_idx + data.len > (1 << 24)) return false;
+        self.buf.appendSlice(self.allocator, data) catch return false;
+        self.dict_front_idx += data.len;
+        self.consumed = self.dict_front_idx;
         self.dict_applied = true;
+        self.dict_seeded = true;
+        return true;
+    }
+
+    /// Attaches a shared dictionary containing one or more compound prefix chunks.
+    pub fn attachSharedDictionary(self: *Encoder, dict: *const shared_dict.SharedDictionary) bool {
+        for (dict.prefixes[0..dict.prefix_count]) |chunk| {
+            if (!self.attachDictionary(chunk)) return false;
+        }
         return true;
     }
 
     pub fn compressStream(self: *Encoder, op: Operation, input: ?[]const u8) !void {
         if (self.failed) return error.BrotliCompressionFailed;
-        // Lazily seed the match history with the custom dictionary so LZ77
-        // can reference it; `consumed` marks where real output begins.
-        if (self.dict_applied and !self.dict_seeded) {
-            try self.buf.appendSlice(self.allocator, self.custom_dict);
-            self.consumed = self.custom_dict.len;
-            self.dict_seeded = true;
-            self.dict_front_idx = self.custom_dict.len;
-        }
         if (input) |data| {
             // Metadata payloads ride the input parameter but are not stream
             // data; they must never enter the match-history buffer.
@@ -1661,38 +1677,10 @@ pub const Encoder = struct {
 // Literal context-modeling helpers
 // ---------------------------------------------------------------------------
 
-/// UTF-8 lead/continuation consistency ratio, mirroring the reference
-/// detector: a byte pair is "good" when it forms valid UTF-8 structure.
+/// Checks whether data is predominantly valid UTF-8.
 fn isMostlyUTF8(data: []const u8) bool {
-    if (data.len == 0) return true;
-    var good: usize = 0;
-    var checked: usize = 0;
-    var i: usize = 0;
-    const n = @min(data.len, 1 << 16); // bounded sampling window
-    while (i < n) {
-        const b = data[i];
-        if (b < 0x80) {
-            i += 1;
-            continue;
-        }
-        const len: usize = if (b >= 0xF0) 4 else if (b >= 0xE0) 3 else if (b >= 0xC0) 2 else 0;
-        checked += 1;
-        if (len == 0 or i + len > data.len) {
-            i += 1;
-            continue;
-        }
-        var ok = true;
-        for (data[i + 1 .. i + len]) |cc| {
-            if ((cc & 0xC0) != 0x80) {
-                ok = false;
-                break;
-            }
-        }
-        if (ok) good += 1;
-        i += len;
-    }
-    if (checked == 0) return true;
-    return @as(f64, @floatFromInt(good)) / @as(f64, @floatFromInt(checked)) >= 0.75;
+    const sample_len = @min(data.len, 1 << 16);
+    return utf8_util.isMostlyUTF8(data[0..sample_len], utf8_util.MIN_UTF8_RATIO);
 }
 
 /// Chooses the literal context mode for a metablock: UTF8 modeling unless

@@ -1,11 +1,8 @@
 //! LSB-first bit reader for the Brotli decoder.
 //!
-//! The reference uses a 64-bit accumulator with fast unaligned loads plus
-//! "safe" byte-at-a-time fallbacks. This port keeps the same accumulator but
-//! refills through bulk little-endian reads when enough contiguous input
-//! remains and falls back to byte-at-a-time pulls otherwise; both paths are
-//! always in-bounds, so no "guard"/overread machinery from the C version is
-//! required.
+//! Uses a 64-bit accumulator with fast unaligned little-endian reads when
+//! enough contiguous input remains, falling back to byte-at-a-time pulls
+//! otherwise. Both paths are strictly bounds-checked.
 
 const std = @import("std");
 
@@ -148,19 +145,14 @@ pub const BitReader = struct {
 
     /// Returns unconsumed whole accumulator bytes back to the input so that
     /// `availIn` reports exactly the input not yet reflected in decoded data,
-    /// keeping fewer than 8 bits in the accumulator (as BrotliBitReaderUnload).
+    /// keeping fewer than 8 bits in the accumulator (matching BrotliBitReaderUnload).
     pub fn unload(br: *BitReader) void {
         const unused_bytes: u32 = br.bit_pos >> 3;
         if (unused_bytes != 0) {
             br.pos -= unused_bytes;
             br.bit_pos -= unused_bytes * 8;
-            // The remaining (< 8) valid bits are the top bit_pos bits of the
-            // byte just before the rewound position.
-            const b = br.input[br.pos - 1];
-            br.val = @as(u64, b) >> @intCast(8 - br.bit_pos);
-        } else {
-            br.normalize();
         }
+        br.normalize();
     }
 };
 
@@ -231,4 +223,14 @@ test "short input safe reads" {
     try std.testing.expect(br.safeReadBits(4, &out));
     try std.testing.expectEqual(@as(u64, 0xB), out);
     try std.testing.expect(!br.safeReadBits(8, &out)); // only 4 bits left
+}
+
+test "unload when all accumulator bits are whole bytes" {
+    const data = [_]u8{ 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88 };
+    var br = BitReader.init(&data);
+    _ = br.ensureBits(32);
+    br.unload();
+    try std.testing.expectEqual(@as(usize, 0), br.pos);
+    try std.testing.expectEqual(@as(u32, 0), br.bit_pos);
+    try std.testing.expectEqual(@as(u64, 0), br.val);
 }

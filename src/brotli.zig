@@ -33,6 +33,11 @@ pub const HuffmanCode = huffman.HuffmanCode;
 const encoder = @import("compress/encode.zig");
 const decoder = @import("decompress/decode.zig");
 pub const streaming = @import("streaming/streaming.zig");
+pub const shared_dictionary = @import("common/shared_dictionary.zig");
+pub const SharedDictionary = shared_dictionary.SharedDictionary;
+pub const SharedDictionaryType = shared_dictionary.SharedDictionaryType;
+pub const MAX_COMPOUND_DICTS = shared_dictionary.MAX_COMPOUND_DICTS;
+pub const utf8_util = @import("compress/utf8_util.zig");
 
 // -------------------------------------------------------------------------
 // Library and Specification Versions
@@ -158,6 +163,30 @@ pub const compressStream = streaming.compressStream;
 
 /// Decompresses from a `std.Io.Reader` directly to a `std.Io.Writer` using chunked streaming.
 pub const decompressStream = streaming.decompressStream;
+
+/// Compresses a slice of bytes using a shared/compound dictionary.
+pub fn compressWithSharedDictionary(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    dict: *const SharedDictionary,
+    options: CompressionOptions,
+) ![]u8 {
+    var opts = options;
+    opts.sharedDictionary = dict;
+    return encoder.compressWithOptions(allocator, input, opts);
+}
+
+/// Decompresses a slice of bytes using a shared/compound dictionary.
+pub fn decompressWithSharedDictionary(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    dict: *const SharedDictionary,
+    options: DecompressionOptions,
+) ![]u8 {
+    var opts = options;
+    opts.sharedDictionary = dict;
+    return decoder.decompressWithOptions(allocator, input, opts);
+}
 
 // -------------------------------------------------------------------------
 // Configuration Parameters & Limits
@@ -678,7 +707,7 @@ test "streaming decompression with small feeds" {
     defer out.deinit(allocator);
     var buf: [256]u8 = undefined;
 
-    for (compressed) |byte| sd.feed(&.{byte});
+    for (compressed) |byte| try sd.feed(&.{byte});
     sd.endInput();
 
     while (!sd.isFinished()) {
@@ -709,7 +738,7 @@ test "streaming decompression with mixed chunk sizes" {
     while (ci < compressed.len) {
         const sz = sizes[si % sizes.len];
         const end = @min(ci + sz, compressed.len);
-        sd.feed(compressed[ci..end]);
+        try sd.feed(compressed[ci..end]);
         ci = end;
         si += 1;
     }
@@ -1095,4 +1124,112 @@ test "multi-threaded concurrent compression and decompression" {
     for (threads) |t| {
         t.join();
     }
+}
+
+test "shared dictionary compression and decompression round trip" {
+    const allocator = testing.allocator;
+
+    var dict = SharedDictionary.init(allocator);
+    defer dict.deinit();
+
+    const prefix_chunk = "The standardized header prefix for this schema: metadata_version=2.0;protocol=secure;";
+    try testing.expect(dict.attach(.raw, prefix_chunk));
+
+    const payload = "The standardized header prefix for this schema: metadata_version=2.0;protocol=secure;data_payload=hello_world";
+
+    const compressed = try compressWithSharedDictionary(allocator, payload, &dict, .{ .quality = 9 });
+    defer allocator.free(compressed);
+
+    const decompressed = try decompressWithSharedDictionary(allocator, compressed, &dict, .{});
+    defer allocator.free(decompressed);
+
+    try testing.expectEqualStrings(payload, decompressed);
+}
+
+test "streaming compressor and decompressor 1-byte end-to-end" {
+    const allocator = testing.allocator;
+    const input = "Antigravity Brotli Zig Native: full 1-byte streaming test under tight memory buffers!";
+
+    var sc = StreamingCompressor.init(allocator, .{ .quality = 6 });
+    defer sc.deinit();
+
+    var sd = StreamingDecompressor.init(allocator, .{});
+    defer sd.deinit();
+
+    var compressed_acc: std.ArrayList(u8) = .empty;
+    defer compressed_acc.deinit(allocator);
+
+    // Compress 1 byte at a time
+    for (input) |b| {
+        const chunk = try sc.process(&.{b});
+        defer allocator.free(chunk);
+        if (chunk.len > 0) try compressed_acc.appendSlice(allocator, chunk);
+    }
+    const final_comp = try sc.finishAlloc();
+    defer allocator.free(final_comp);
+    if (final_comp.len > 0) try compressed_acc.appendSlice(allocator, final_comp);
+    try testing.expect(sc.isFinished());
+
+    // Decompress 1 byte at a time and take 1 byte at a time
+    for (compressed_acc.items) |b| {
+        try sd.feed(&.{b});
+    }
+    sd.endInput();
+
+    var decomp_acc: std.ArrayList(u8) = .empty;
+    defer decomp_acc.deinit(allocator);
+
+    var tiny_out: [1]u8 = undefined;
+    while (!sd.isFinished()) {
+        const n = try sd.take(&tiny_out);
+        if (n > 0) try decomp_acc.appendSlice(allocator, tiny_out[0..n]);
+        if (n == 0 and sd.hasError()) return error.BrotliStreamError;
+    }
+
+    try testing.expectEqualStrings(input, decomp_acc.items);
+}
+
+test "streaming shared dictionary end-to-end" {
+    const allocator = testing.allocator;
+
+    var dict = SharedDictionary.init(allocator);
+    defer dict.deinit();
+    const common_prefix = "GET /api/v2/items/query?category=electronics&page=1 HTTP/1.1\r\nHost: api.example.com\r\n";
+    try testing.expect(dict.attach(.raw, common_prefix));
+
+    var sc = StreamingCompressor.init(allocator, .{ .quality = 7 });
+    defer sc.deinit();
+    try testing.expect(sc.attachSharedDictionary(&dict));
+
+    var sd = StreamingDecompressor.init(allocator, .{});
+    defer sd.deinit();
+    try testing.expect(sd.attachSharedDictionary(&dict));
+
+    const payload = "GET /api/v2/items/query?category=electronics&page=1 HTTP/1.1\r\nHost: api.example.com\r\nAccept: application/json\r\n\r\n";
+
+    var comp_bytes: std.ArrayList(u8) = .empty;
+    defer comp_bytes.deinit(allocator);
+
+    const c1 = try sc.process(payload);
+    defer allocator.free(c1);
+    if (c1.len > 0) try comp_bytes.appendSlice(allocator, c1);
+
+    const c2 = try sc.finishAlloc();
+    defer allocator.free(c2);
+    if (c2.len > 0) try comp_bytes.appendSlice(allocator, c2);
+
+    try sd.feed(comp_bytes.items);
+    sd.endInput();
+
+    var decomp_bytes: std.ArrayList(u8) = .empty;
+    defer decomp_bytes.deinit(allocator);
+
+    var buf: [64]u8 = undefined;
+    while (!sd.isFinished()) {
+        const n = try sd.take(&buf);
+        if (n > 0) try decomp_bytes.appendSlice(allocator, buf[0..n]);
+        if (n == 0 and sd.hasError()) return error.BrotliStreamError;
+    }
+
+    try testing.expectEqualStrings(payload, decomp_bytes.items);
 }

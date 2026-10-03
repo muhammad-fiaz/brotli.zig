@@ -17,9 +17,12 @@ const bit_reader = @import("../bitstream/bit_reader.zig");
 const huff = @import("../huffman/huffman.zig");
 const prefix = @import("prefix.zig");
 const ranges = @import("../common/prefix_ranges.zig");
+const shared_dict = @import("../common/shared_dictionary.zig");
 
 const BitReader = bit_reader.BitReader;
 const HuffmanCode = huff.HuffmanCode;
+pub const SharedDictionary = shared_dict.SharedDictionary;
+pub const SharedDictionaryType = shared_dict.SharedDictionaryType;
 
 /// Detailed error codes, mirroring BROTLI_DECODER_ERROR_CODES_LIST.
 pub const ErrorCode = enum(i8) {
@@ -134,6 +137,8 @@ pub const Options = struct {
     cannyRingbufferAllocation: bool = true,
     /// Optional raw custom dictionary data.
     customDictionary: ?[]const u8 = null,
+    /// Optional shared dictionary instance containing compound prefix chunks.
+    sharedDictionary: ?*const shared_dict.SharedDictionary = null,
     /// Safety limit on ring buffer size in bytes (0 = no limit).
     ringBufferSizeLimit: usize = 0,
     /// Safety limit on maximum decompressed output size in bytes (null = no limit).
@@ -446,6 +451,9 @@ pub const Decoder = struct {
         if (options.customDictionary) |dict| {
             _ = d.attachDictionary(dict);
         }
+        if (options.sharedDictionary) |s_dict| {
+            _ = d.attachSharedDictionary(s_dict);
+        }
         return d;
     }
 
@@ -469,6 +477,10 @@ pub const Decoder = struct {
     /// Resets the decoder state for a new stream, retaining allocated ring buffer and tree arrays.
     pub fn reset(self: *Decoder, options: ?Options) void {
         self.cleanupAfterMetablock(true);
+        if (self.compound) |c| {
+            c.* = .{};
+            c.chunk_offsets[0] = 0;
+        }
         if (options) |opts| {
             self.options = opts;
             self.large_window = opts.largeWindow;
@@ -477,6 +489,9 @@ pub const Decoder = struct {
             }
             if (opts.customDictionary) |dict| {
                 _ = self.attachDictionary(dict);
+            }
+            if (opts.sharedDictionary) |s_dict| {
+                _ = self.attachSharedDictionary(s_dict);
             }
         }
         self.run_state = .uninited;
@@ -613,6 +628,14 @@ pub const Decoder = struct {
         addon.num_chunks += 1;
         addon.total_size += @intCast(data.len);
         addon.chunk_offsets[addon.num_chunks] = addon.total_size;
+        return true;
+    }
+
+    /// Attaches a shared dictionary containing one or more compound prefix chunks.
+    pub fn attachSharedDictionary(self: *Decoder, dict: *const shared_dict.SharedDictionary) bool {
+        for (dict.prefixes[0..dict.prefix_count]) |chunk| {
+            if (!self.attachDictionary(chunk)) return false;
+        }
         return true;
     }
 
@@ -842,8 +865,7 @@ pub const Decoder = struct {
         self.dist_context_map_slice = &.{};
         self.dist_htree_index = 0;
         self.context_lookup = &.{};
-        // NOTE: unlike C, which relies on CleanupAfterMetablock having freed
-        // the groups beforehand, we explicitly drop any leftovers here.
+        // Explicitly drop any leftover tree groups.
         self.freeTreeGroup(&self.literal_hgroup);
         self.freeTreeGroup(&self.insert_copy_hgroup);
         self.freeTreeGroup(&self.distance_hgroup);
@@ -1186,8 +1208,7 @@ pub const Decoder = struct {
             switch (self.substate_context_map) {
                 .none => {
                     {
-                        // Scratch storage mirrors C's use of *num_htrees as
-                        // the resumable value holder; overwritten on entry.
+                        // Scratch storage serves as the resumable value holder; overwritten on entry.
                         const r = self.decodeVarLenUint8(br, &self.cm_scratch);
                         if (r != .success) return r;
                         num_htrees.* = @as(u64, self.cm_scratch) + 1;
@@ -1813,7 +1834,7 @@ pub const Decoder = struct {
         return pos - orig_pos;
     }
 
-    /// The hot decoding loop: faithful port of ProcessCommandsInternal.
+    /// The command processing loop for literal insertions and backward references.
     /// Saves `pos`/`loop_counter` on every exit point.
     fn processCommands(self: *Decoder) ErrorCode {
         var pos: usize = @intCast(@max(self.pos, 0));
@@ -1901,8 +1922,7 @@ pub const Decoder = struct {
                         pos += 1;
                         ins -= 1;
                         if (pos == self.ringbuffer_size) {
-                            // C decrements `i` here because the loop-bottom
-                            // decrement will not run before saving state.
+                            // Save state and transition to ring buffer output.
                             self.run_state = .command_inner_write;
                             break :dispatch;
                         }
@@ -2110,9 +2130,6 @@ pub const Decoder = struct {
 
         if (total_out) |p| p.* = self.partial_pos_out;
         if (self.err.isError()) return .err;
-        if (available_out.len != 0 and available_out.len == 0) {
-            return self.saveErrorCode(fail(.error_invalid_arguments));
-        }
 
         if (self.buffer_length == 0) {
             self.br.setInput(input);

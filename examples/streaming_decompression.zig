@@ -22,10 +22,10 @@ pub fn main() !void {
     var i: usize = 0;
     while (i < sample_stream.len) : (i += 3) {
         const end = @min(i + 3, sample_stream.len);
-        sd.feed(sample_stream[i..end]);
+        try sd.feed(sample_stream[i..end]);
         total += try sd.take(&out_buf);
     }
-    sd.feed(&.{});
+    try sd.feed(&.{});
     while (!sd.isFinished()) total += try sd.take(&out_buf);
 
     std.debug.print("streamed {d} output bytes\n", .{total});

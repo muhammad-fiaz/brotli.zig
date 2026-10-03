@@ -11,6 +11,8 @@ pub const DecompressionOptions = decoder.Options;
 pub const Decoder = decoder.Decoder;
 pub const DecodeResult = decoder.Result;
 pub const ErrorCode = decoder.ErrorCode;
+pub const SharedDictionary = decoder.SharedDictionary;
+pub const SharedDictionaryType = decoder.SharedDictionaryType;
 
 /// Incremental streaming decompression context over the native Brotli decoder.
 ///
@@ -46,9 +48,19 @@ pub const StreamingDecompressor = struct {
         self.inner.reset(options);
     }
 
+    /// Attaches a custom dictionary; must precede the first feed/read call.
+    pub fn attachDictionary(self: *StreamingDecompressor, data: []const u8) bool {
+        return self.inner.attachDictionary(data);
+    }
+
+    /// Attaches a shared dictionary containing compound prefix chunks; must precede the first feed/read call.
+    pub fn attachSharedDictionary(self: *StreamingDecompressor, dict: *const SharedDictionary) bool {
+        return self.inner.attachSharedDictionary(dict);
+    }
+
     /// Feeds input bytes into the internal accumulation buffer.
-    pub fn feed(self: *StreamingDecompressor, chunk: []const u8) void {
-        self.inbuf.appendSlice(self.allocator, chunk) catch {};
+    pub fn feed(self: *StreamingDecompressor, chunk: []const u8) !void {
+        try self.inbuf.appendSlice(self.allocator, chunk);
     }
 
     /// Signals no more input will arrive; flushes any remaining partial data.
@@ -104,7 +116,7 @@ pub const StreamingDecompressor = struct {
         while (!self.isFinished()) {
             const n_in = reader.readSliceShort(&in_chunk) catch |err| return err;
             if (n_in > 0) {
-                self.feed(in_chunk[0..n_in]);
+                try self.feed(in_chunk[0..n_in]);
             } else {
                 self.endInput();
             }
@@ -202,7 +214,7 @@ const testing = std.testing;
 test "StreamingDecompressor on empty finalized stream" {
     var sd = StreamingDecompressor.init(testing.allocator, .{});
     defer sd.deinit();
-    sd.feed(&.{0x06}); // Empty RFC 7932 stream
+    try sd.feed(&.{0x06}); // Empty RFC 7932 stream
     var out: [16]u8 = undefined;
     const n = try sd.take(&out);
     try testing.expectEqual(@as(usize, 0), n);
@@ -213,14 +225,55 @@ test "StreamingDecompressor reset and reuse" {
     var sd = StreamingDecompressor.init(testing.allocator, .{});
     defer sd.deinit();
 
-    sd.feed(&.{0x06});
+    try sd.feed(&.{0x06});
     var out: [16]u8 = undefined;
     _ = try sd.take(&out);
     try testing.expect(sd.isFinished());
 
     sd.reset(.{});
     try testing.expect(!sd.isFinished());
-    sd.feed(&.{0x06});
+    try sd.feed(&.{0x06});
+    _ = try sd.take(&out);
+    try testing.expect(sd.isFinished());
+}
+
+test "StreamingDecompressor 1-byte feed and 1-byte take" {
+    var sd = StreamingDecompressor.init(testing.allocator, .{});
+    defer sd.deinit();
+
+    // Valid Brotli stream for "Xyzzy" (10 bytes)
+    const stream = "\x0b\x02\x80\x58\x79\x7a\x7a\x79\x03";
+    for (stream) |b| {
+        try sd.feed(&.{b});
+    }
+    sd.endInput();
+
+    var out_buf: [1]u8 = undefined;
+    var result: std.ArrayList(u8) = .empty;
+    defer result.deinit(testing.allocator);
+
+    while (!sd.isFinished()) {
+        const n = try sd.take(&out_buf);
+        if (n > 0) {
+            try result.appendSlice(testing.allocator, out_buf[0..n]);
+        }
+        if (n == 0 and sd.hasError()) return error.BrotliStreamError;
+    }
+
+    try testing.expectEqualStrings("Xyzzy", result.items);
+}
+
+test "StreamingDecompressor attachSharedDictionary" {
+    var dict = SharedDictionary.init(testing.allocator);
+    defer dict.deinit();
+    _ = dict.attach(.raw, "prefix_dictionary_content");
+
+    var sd = StreamingDecompressor.init(testing.allocator, .{});
+    defer sd.deinit();
+    try testing.expect(sd.attachSharedDictionary(&dict));
+
+    try sd.feed(&.{0x06});
+    var out: [16]u8 = undefined;
     _ = try sd.take(&out);
     try testing.expect(sd.isFinished());
 }

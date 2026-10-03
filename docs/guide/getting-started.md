@@ -5,7 +5,7 @@ description: Get up and running with brotli.zig in minutes.
 
 # Getting Started
 
-brotli.zig is a complete native Zig implementation of [Brotli](https://www.brotli.org/) compression (RFC 7932). No C bindings, no external dependencies â€” just Zig.
+brotli.zig is a complete native Zig implementation of [Brotli](https://www.brotli.org/) compression (RFC 7932). No C bindings, no external dependencies - just Zig.
 
 ::: warning Version Requirement
 This library targets **Zig 0.17.0** (required). Download from [ziglang.org](https://ziglang.org/download/).

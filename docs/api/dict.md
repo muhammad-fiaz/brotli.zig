@@ -70,11 +70,48 @@ if (!dec.attachDictionary(shared_corpus)) {
 // Decompress streams produced with shared_corpus...
 ```
 
+## Shared and Compound Dictionaries (`brotli.SharedDictionary`)
+
+For multi-chunk compound dictionary scenarios, `brotli.SharedDictionary` manages up to 15 chunks (`MAX_COMPOUND_DICTS = 15`) and up to 16 MiB total size:
+
+```zig
+const brotli = @import("brotli");
+
+var dict = brotli.SharedDictionary.init(allocator);
+defer dict.deinit();
+
+_ = dict.attach(.raw, "prefix_chunk_one");
+_ = dict.attach(.raw, "prefix_chunk_two");
+
+// One-shot helpers
+const compressed = try brotli.compressWithSharedDictionary(allocator, payload, &dict, .{ .quality = 9 });
+defer allocator.free(compressed);
+
+const decompressed = try brotli.decompressWithSharedDictionary(allocator, compressed, &dict, .{});
+defer allocator.free(decompressed);
+```
+
+### Streaming with Shared Dictionaries
+
+Attach `SharedDictionary` instances directly to streaming codecs:
+
+```zig
+// Streaming compressor
+var sc = brotli.StreamingCompressor.init(allocator, .{ .quality = 7 });
+defer sc.deinit();
+_ = sc.attachSharedDictionary(&dict);
+
+// Streaming decompressor
+var sd = brotli.StreamingDecompressor.init(allocator, .{});
+defer sd.deinit();
+_ = sd.attachSharedDictionary(&dict);
+```
+
 ## Rules and Operational Constraints
 
 - **Exact Match Required**: The decoder must receive the byte-for-byte identical dictionary that was attached during compression.
 - **Reference Semantics**: Dictionary memory is referenced (not copied). The slice must outlive the compression/decompression operations.
-- **Call Order**: When using context objects, `attachDictionary()` must be called **before** any input data is fed.
+- **Call Order**: When using context objects, `attachDictionary()` or `attachSharedDictionary()` must be called **before** any input data is fed.
 - **Maximum Size**: Up to 16 MiB (`1 << 24` bytes, per RFC 7932 compound dictionary rules).
 
 ## Built-In Static Dictionary (`brotli.Dictionary`)

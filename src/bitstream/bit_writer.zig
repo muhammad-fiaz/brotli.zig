@@ -4,12 +4,32 @@ const std = @import("std");
 
 /// Writes `n_bits` (<= 56) of the low bits of `bits` at bit position `*pos`.
 pub inline fn writeBits(n_bits: u6, bits: u64, pos: *usize, array: []u8) void {
-    std.debug.assert(bits >> n_bits == 0);
-    const p = array[pos.* >> 3 ..];
-    const v = std.mem.readInt(u64, p[0..8], .little);
-    const shifted = bits << @intCast(pos.* & 7);
-    std.mem.writeInt(u64, p[0..8], v | shifted, .little);
-    pos.* += n_bits;
+    if (n_bits == 0) return;
+    std.debug.assert(if (n_bits == 64) true else (bits >> @intCast(n_bits)) == 0);
+    const byte_pos = pos.* >> 3;
+    const p = array[byte_pos..];
+    if (p.len >= 8) {
+        var v: u64 = p[0];
+        v |= bits << @intCast(pos.* & 7);
+        std.mem.writeInt(u64, p[0..8], v, .little);
+        pos.* += n_bits;
+    } else {
+        const bits_reserved: u3 = @intCast(pos.* & 7);
+        var current_bits = bits << bits_reserved;
+        p[0] |= @truncate(current_bits);
+        var written_bytes: usize = 1;
+        var bits_left: usize = n_bits + bits_reserved;
+        while (bits_left >= 9 and written_bytes < p.len) {
+            current_bits >>= 8;
+            p[written_bytes] = @truncate(current_bits);
+            written_bytes += 1;
+            bits_left -= 8;
+        }
+        if (written_bytes < p.len) {
+            p[written_bytes] = 0;
+        }
+        pos.* += n_bits;
+    }
 }
 
 /// Zeroes the byte containing bit position `pos`; `pos` must be byte-aligned.

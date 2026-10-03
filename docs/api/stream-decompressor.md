@@ -63,12 +63,12 @@ try stream_dec.read(&in_reader.interface, &out_writer.interface);
 When working with network packets or non-contiguous memory chunks:
 
 ```zig
-pub fn feed(self: *StreamingDecompressor, chunk: []const u8) void
+pub fn feed(self: *StreamingDecompressor, chunk: []const u8) !void
 pub fn endInput(self: *StreamingDecompressor) void
 pub fn take(self: *StreamingDecompressor, out: []u8) !usize
 ```
 
-- `feed(chunk)`: Appends compressed bytes to the decompressor's internal intake.
+- `feed(chunk)`: Appends compressed bytes to the decompressor's internal intake. Returns error if memory allocation fails.
 - `take(out)`: Decodes available uncompressed data into `out`, returning the number of bytes written.
 - `endInput()`: Notifies the decompressor that all input has been sent.
 
@@ -78,7 +78,7 @@ pub fn take(self: *StreamingDecompressor, out: []u8) !usize
 var out_buf: [16384]u8 = undefined;
 
 for (network_packets) |packet| {
-    stream_dec.feed(packet);
+    try stream_dec.feed(packet);
 
     while (true) {
         const n = try stream_dec.take(&out_buf);
@@ -96,6 +96,15 @@ while (!stream_dec.isFinished()) {
 }
 ```
 
+## Dictionary Attachment
+
+Attach custom raw or compound dictionaries before feeding any input:
+
+```zig
+pub fn attachDictionary(self: *StreamingDecompressor, data: []const u8) bool
+pub fn attachSharedDictionary(self: *StreamingDecompressor, dict: *const SharedDictionary) bool
+```
+
 ## Diagnostics & Inspection
 
 ```zig
@@ -108,3 +117,4 @@ pub fn totalOut(self: *const StreamingDecompressor) u64
 - `isFinished()`: Returns `true` once the entire Brotli stream has reached its terminating block.
 - `errorCode()`: Returns the detailed `ErrorCode` enum value if an error occurs.
 - `totalOut()`: Cumulative count of uncompressed bytes emitted so far.
+

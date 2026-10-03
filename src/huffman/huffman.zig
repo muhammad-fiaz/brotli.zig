@@ -127,7 +127,7 @@ pub fn buildCodeLengthsHuffmanTable(
             symbol -= 1;
             const idx: usize = @intCast(symbol);
             const cl = code_lengths[idx];
-            // C uses a post-decrement here: store at the current offset.
+            // Store at the current offset and decrement.
             const dst = offset[cl];
             offset[cl] -= 1;
             sorted[@intCast(dst)] = @intCast(idx);

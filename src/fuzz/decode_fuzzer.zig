@@ -1,7 +1,7 @@
 //! Decoder robustness fuzzer.
 //!
 //! Feeds arbitrary bytes to a fresh decoder and asserts the library never
-//! crashes, panics, or leaks â€” any input must yield success, a graceful
+//! crashes, panics, or leaks - any input must yield success, a graceful
 //! needs-more-input/output result, or a detailed error code.
 //!
 //! Run via `zig build fuzz` (deterministic pseudo-random inputs) or wire

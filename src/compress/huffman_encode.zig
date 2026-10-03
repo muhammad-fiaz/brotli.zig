@@ -7,6 +7,8 @@
 const std = @import("std");
 const prefix = @import("../decompress/prefix.zig");
 
+const bit_writer = @import("../bitstream/bit_writer.zig");
+
 pub const MAX_CODE_LENGTH = 15;
 
 /// LSB-first bit sink over a preallocated buffer.
@@ -15,11 +17,7 @@ pub const BitSink = struct {
     pos: usize = 0,
 
     pub inline fn put(self: *BitSink, n_bits: u6, value: u64) void {
-        std.debug.assert(value >> n_bits == 0);
-        const p = self.buf[self.pos >> 3 ..];
-        const v = std.mem.readInt(u64, p[0..8], .little);
-        std.mem.writeInt(u64, p[0..8], v | (value << @intCast(self.pos & 7)), .little);
-        self.pos += n_bits;
+        bit_writer.writeBits(n_bits, value, &self.pos, self.buf);
     }
 
     pub inline fn putBits(self: *BitSink, n_bits: u5, value: u64) void {
