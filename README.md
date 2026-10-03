@@ -14,7 +14,7 @@
 <a href="https://pay.muhammadfiaz.com"><img src="https://img.shields.io/badge/Sponsor-pay.muhammadfiaz.com-ff69b4?style=flat&logo=heart" alt="Sponsor"></a>
 <a href="https://github.com/sponsors/muhammad-fiaz"><img src="https://img.shields.io/badge/Sponsor-GitHub-pink?style=social&logo=github" alt="GitHub Sponsors"></a>
 
-<p><em>High-performance, native Brotli compression for Zig.</em></p>
+<p><em>Fast, native Brotli compression for Zig.</em></p>
 
 <b><a href="https://muhammad-fiaz.github.io/brotli.zig/">Documentation</a> |
 <a href="https://muhammad-fiaz.github.io/brotli.zig/api/">API Reference</a> |
@@ -23,7 +23,7 @@
 
 </div>
 
-`brotli.zig` is a complete native Zig implementation of the [Brotli](https://www.brotli.org/) compression format (RFC 7932 and Large Window Brotli). Built from scratch in pure Zig with zero C bindings, no libc dependency, and full support for one-shot and streaming operations.
+`brotli.zig` is a complete, native Zig implementation of the [Brotli](https://www.brotli.org/) compressed-data format (RFC 7932, including Large Window Brotli) targeting **Zig 0.17.0**, built entirely from scratch in pure Zig. No C bindings, no libc, and no external dependencies.
 
 > [!TIP]
 > If you build with brotli.zig, make sure to give it a star!

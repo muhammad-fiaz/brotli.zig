@@ -65,7 +65,7 @@ pub const ErrorCode = enum(i8) {
     resource_limit = -32,
 
     pub fn isError(code: ErrorCode) bool {
-        return @intFromEnum(code) < 0;
+        return @backingInt(code) < 0;
     }
 
     pub fn name(code: ErrorCode) []const u8 {

@@ -1398,7 +1398,7 @@ pub const Encoder = struct {
 
         // One two-bit context mode per literal block type.
         {
-            const mode_val: u64 = if (cm) |c| @intFromEnum(c.mode) else 0;
+            const mode_val: u64 = if (cm) |c| @backingInt(c.mode) else 0;
             const ntypes: usize = if (split) |s| @intCast(s.ntypes) else 1;
             var t: usize = 0;
             while (t < ntypes) : (t += 1) self.w.put(2, mode_val);
