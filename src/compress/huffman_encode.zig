@@ -310,7 +310,7 @@ pub fn storeHuffmanTree(
     // Complex tree with code-length coding.
     w.put(2, 0); // HSKIP = 0
 
-    var cl_freqs = [_]u32{0} ** 18;
+    var cl_freqs: [18]u32 = @splat(0);
     // Detect the degenerate "every used symbol has the same nonzero depth"
     // case: its CL histogram would contain a single symbol, which the nested
     // tree cannot express. Splitting off one direct emission guarantees at
@@ -350,9 +350,9 @@ pub fn storeHuffmanTree(
             }
         }
         // Zero-width emission context: every lookup yields `only_sym`.
-        var z_depths = [_]u8{0} ** 18;
+        var z_depths: [18]u8 = @splat(0);
         z_depths[only_sym] = 0;
-        const z_codes = [_]u16{0} ** 18;
+        const z_codes: [18]u16 = @splat(0);
         const ctx = ClContext{ .codes = z_codes, .depths = z_depths };
         emitDepthSymbols(w, depths[0..limit], &ctx, false);
         assignCanonicalCodes(depths[0..limit], codes);

@@ -48,7 +48,7 @@ pub fn main(init: std.process.Init) !void {
             defer allocator.free(sample);
             compressed = try brotli.compressWithOptions(allocator, sample, .{
                 .quality = 9,
-                .lgwin = 22,
+                .lgWin = 22,
             });
             // Persist it so subsequent runs exercise the on-disk path.
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = "sample.br", .data = compressed });

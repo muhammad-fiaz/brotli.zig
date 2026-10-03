@@ -29,7 +29,7 @@ pub fn main(init: std.process.Init) !void {
             const sample = try buildSample(allocator);
             defer allocator.free(sample);
             compressed = try brotli.compressWithOptions(allocator, sample, .{
-                .quality = 9, .lgwin = 22,
+                .quality = 9, .lgWin = 22,
             });
             try std.Io.Dir.cwd().writeFile(io, .{
                 .sub_path = "sample.br", .data = compressed,

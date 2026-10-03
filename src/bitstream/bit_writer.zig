@@ -25,7 +25,7 @@ pub inline fn jumpToByteBoundary(pos: *usize, storage: []u8) void {
 }
 
 test "writeBits packs LSB first" {
-    var buf = [_]u8{0} ** 16;
+    var buf: [16]u8 = @splat(0);
     var pos: usize = 0;
     // Write 3 bits = 0b101, then 5 bits = 0b11010 -> byte0 = 0b11010101.
     writeBits(3, 0b101, &pos, &buf);
@@ -35,7 +35,7 @@ test "writeBits packs LSB first" {
 }
 
 test "writeBits spans bytes" {
-    var buf = [_]u8{0} ** 16;
+    var buf: [16]u8 = @splat(0);
     var pos: usize = 5;
     writeBits(9, 0x1AB, &pos, &buf); // 9 bits starting at offset 5.
     try std.testing.expectEqual(@as(usize, 14), pos);
@@ -44,7 +44,7 @@ test "writeBits spans bytes" {
 }
 
 test "jumpToByteBoundary" {
-    var buf = [_]u8{0xFF} ** 4;
+    var buf: [4]u8 = @splat(0xFF);
     var pos: usize = 11;
     jumpToByteBoundary(&pos, &buf);
     try std.testing.expectEqual(@as(usize, 16), pos);

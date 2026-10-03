@@ -38,7 +38,7 @@ pub fn main(init: std.process.Init) !void {
     inline for (.{ 1, 5, 9, 11 }) |q| {
         const compressed = try brotli.compressWithOptions(allocator, input, .{
             .quality = q,
-            .lgwin = 22,
+            .lgWin = 22,
         });
         defer allocator.free(compressed);
 

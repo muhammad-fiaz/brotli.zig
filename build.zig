@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(lib);
 
-    // `zig build test` runs library tests only.
+    // `zig build test` runs library unit, integration, and interoperability tests.
     const test_step = b.step("test", "Run all tests");
     const tests = b.addTest(.{ .root_module = brotli_mod });
     const run_tests = b.addRunArtifact(tests);

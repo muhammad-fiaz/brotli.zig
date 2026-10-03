@@ -10,7 +10,7 @@ pub const ContextType = enum(u2) {
     signed = 3,
 
     pub fn fromInt(v: u32) ContextType {
-        return @enumFromInt(@as(u2, @intCast(v & 3)));
+        return @fromBackingInt(@intCast(@as(u2, @intCast(v & 3))));
     }
 };
 
@@ -20,7 +20,7 @@ const HALF = 256;
 /// Returns the combined 512-entry LUT for `mode`: entries [0..255] map the
 /// last byte and [256..511] map the second-last byte.
 pub fn contextLut(mode: ContextType) []const u8 {
-    const base: usize = @as(usize, @intFromEnum(mode)) << 9;
+    const base: usize = @as(usize, @backingInt(mode)) << 9;
     return tables.table[base .. base + 512];
 }
 
@@ -36,8 +36,7 @@ test "context ids are within range" {
     while (p1 < 256) : (p1 += 1) {
         var p2: u16 = 0;
         while (p2 < 256) : (p2 += 1) {
-            inline for (std.meta.fields(ContextType)) |f| {
-                const mode: ContextType = @enumFromInt(f.value);
+            inline for (std.enums.values(ContextType)) |mode| {
                 const id = contextId(@intCast(p1), @intCast(p2), mode);
                 try std.testing.expect(id < 64);
             }

@@ -1,65 +1,84 @@
 ---
-title: Strategy & Quality Levels
-description: Mode enum and numeric quality levels for the Brotli encoder.
+title: Quality Levels & Tuning
+description: Compression quality levels, speed-ratio trade-offs, and mode strategies in brotli.zig.
 ---
 
-# Strategy & Quality Levels
+# Quality Levels & Tuning
 
-There is no `CLevel` enum â€” quality levels are plain `u32`.
+Brotli defines quality levels as numerical `u32` integers ranging from `0` to `11`. There is no dedicated enum for quality levels.
 
-## Levels
+## Quality Boundaries
 
-Quality levels are `u32` in range `0` to `11`, with default `11`:
-
-```zig
-pub const MIN_QUALITY: u32 = 0;
-pub const MAX_QUALITY: u32 = 11;
-pub const DEFAULT_QUALITY: u32 = 11;
-
-pub fn versionString() []const u8 // "0.0.3"
-pub fn versionNumber() u32        // 3
-```
-
-Use with `brotli.compressWithOptions` or `StreamingCompressor`:
+Defined in `src/brotli.zig`:
 
 ```zig
-// Numeric quality levels
-const c1 = try brotli.compressWithOptions(allocator, data, .{ .quality = 1 });  // fastest
-const c5 = try brotli.compressWithOptions(allocator, data, .{ .quality = 5 });  // balanced
-const c9 = try brotli.compressWithOptions(allocator, data, .{ .quality = 9 });  // good ratio
-const c11 = try brotli.compressWithOptions(allocator, data, .{});               // best (default)
+pub const minQuality: u32 = 0;
+pub const maxQuality: u32 = 11;
+pub const defaultQuality: u32 = 11;
 
-// Via streaming
-var sc = brotli.StreamingCompressor.init(allocator, .{ .quality = 9 });
-defer sc.deinit();
+// Uppercase aliases for C API familiarity:
+pub const MIN_QUALITY: u32 = minQuality;
+pub const MAX_QUALITY: u32 = maxQuality;
+pub const DEFAULT_QUALITY: u32 = defaultQuality;
 ```
 
-Quality trade-off (measured on pseudo-text, 512 KiB):
+## Level Profiles & Trade-Offs
 
-| Quality | Ratio | Character |
-|---------|-------|-----------|
-| 0â€“1 | ~21% | Fastest; greedy matching |
-| 5 | ~18.5% | Balanced; lazy matching |
-| 9 | ~17.5% | Deep hash-chain search |
-| 11 | ~18% | Best analysis (context modeling heuristics) |
+| Quality | Match Search | Lazy Evaluation | Primary Use Case |
+|---|---|---|---|
+| `0`..`1` | Fast greedy hash-table | Disabled | Real-time low-latency compression (e.g. streaming web sockets) |
+| `2`..`4` | Multi-slot hash-table | Disabled | Fast bulk data ingest, log archival |
+| `5`..`6` | Hash-chain search | Enabled | Balanced daily workloads, HTTP dynamic compression |
+| `7`..`9` | Deep hash chains | Enabled | Static asset generation, release distribution |
+| `10`..`11` | Optimal block splitting & context maps | Enabled | Best possible compression ratio; maximum file size reduction |
 
-## Window Size
+### Quality Selection Example
 
-Backward-reference distances are bounded by `lgwin` (10..24):
+```zig
+const brotli = @import("brotli");
+
+// Fast real-time compression:
+const fast = try brotli.compressWithOptions(allocator, data, .{
+    .quality = 1,
+});
+defer allocator.free(fast);
+
+// Balanced everyday compression:
+const balanced = try brotli.compressWithOptions(allocator, data, .{
+    .quality = 6,
+});
+defer allocator.free(balanced);
+
+// Maximum ratio for static assets:
+const optimal = try brotli.compressWithOptions(allocator, data, .{
+    .quality = 11,
+});
+defer allocator.free(optimal);
+```
+
+## Sliding Window Size (`lgWin`)
+
+The sliding window defines the maximum lookback distance for LZ77 copy commands:
+
+```zig
+pub const defaultWindow: u32 = 22;
+pub const minWindowBits: u32 = 10;
+pub const maxWindowBits: u32 = 24;
+pub const largeMaxWindowBits: u32 = 30;
+```
+
+- Standard RFC 7932 limits `lgWin` to `10..24` (window sizes `1 KiB` to `16 MiB`).
+- With `largeWindow = true`, `lgWin` may extend up to `30` (`1 GiB` sliding window).
+- Max backward reference distance is `(1 << lgWin) - 16`.
 
 ```zig
 const opts = brotli.CompressionOptions{
-    .quality = 11,
-    .lgwin = 22, // default; max distance = (1 << 22) - 16
+    .quality = 9,
+    .lgWin = 20, // 1 MiB window: (1 << 20) - 16 bytes max distance
 };
 ```
 
-Larger windows find more distant matches at a small memory cost. Use
-`large_window = true` to accept values up to 30 for decoding interop.
-
-## Mode
-
-`Mode` selects text-analysis hints (mirrors `BROTLI_MODE_*`):
+## Compression Modes (`Mode`)
 
 ```zig
 pub const Mode = enum(u3) {
@@ -69,12 +88,14 @@ pub const Mode = enum(u3) {
 };
 ```
 
-Set via options:
+- `.generic`: Default tuning suitable for general binary data.
+- `.text`: Tunes literal context modeling heuristics for UTF-8 and ASCII text, source code, and JSON.
+- `.font`: Tunes entropy coding for WOFF 2.0 font data.
 
 ```zig
 const opts = brotli.CompressionOptions{
     .quality = 11,
     .mode = .text,
-    .size_hint = input.len,
+    .sizeHint = input.len,
 };
 ```

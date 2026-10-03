@@ -69,9 +69,8 @@ pub const SymbolChains = struct {
     // NOTE: intentionally value-only (no back-pointers); the successor-link
     // storage is passed per-call so the struct can live inside a parent that
     // is moved/copied without dangling references.
-    heads: [HUFFMAN_MAX_CODE_LENGTH + 1]u16 =
-        [_]u16{EMPTY_SYMBOL} ** (HUFFMAN_MAX_CODE_LENGTH + 1),
-    tails: [HUFFMAN_MAX_CODE_LENGTH + 1]u16 = [_]u16{0} ** (HUFFMAN_MAX_CODE_LENGTH + 1),
+    heads: [HUFFMAN_MAX_CODE_LENGTH + 1]u16 = @splat(EMPTY_SYMBOL),
+    tails: [HUFFMAN_MAX_CODE_LENGTH + 1]u16 = @splat(0),
 
     pub inline fn append(self: *SymbolChains, next_of: []u16, len: usize, symbol: u16) void {
         if (self.heads[len] == EMPTY_SYMBOL) {
@@ -93,7 +92,7 @@ pub const SymbolChains = struct {
     }
 
     pub fn reset(self: *SymbolChains) void {
-        self.heads = [_]u16{EMPTY_SYMBOL} ** (HUFFMAN_MAX_CODE_LENGTH + 1);
+        self.heads = @splat(EMPTY_SYMBOL);
         // tails/next_of are only read after being written for lengths that
         // appear in heads, so they do not need clearing.
     }
@@ -372,10 +371,10 @@ test "second-level markers satisfy slot-plus-value invariant" {
     // longest code (9 bits) must live in a second-level table. Every root
     // marker stores (sub_table_offset - root_slot); the decoder re-adds the
     // slot, so slot + value must land inside the allocated sub-table region.
-    var table = [_]HuffmanCode{construct(0, 0)} ** HUFFMAN_MAX_SIZE_272;
+    var table: [HUFFMAN_MAX_SIZE_272]HuffmanCode = @splat(construct(0, 0));
     var next_buf: [16]u16 = undefined;
     var chains = SymbolChains{};
-    var count = [_]u16{0} ** 16;
+    var count: [16]u16 = @splat(0);
     var len: usize = 1;
     while (len <= 9) : (len += 1) {
         chains.append(&next_buf, len, @intCast(len - 1));
