@@ -56,7 +56,7 @@ Add the dependency to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .brotli = .{
-        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.4.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz",
         .hash = "...", // Run `zig fetch --save <url>` to generate the hash.
     },
 },
