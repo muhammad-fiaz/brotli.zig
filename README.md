@@ -122,13 +122,13 @@ zig build -Dtarget=x86-windows
 ### Method 1: Zig Fetch (Recommended) - Latest Release
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.4.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz
 ```
 
 For projects using **Zig 0.16.0**, install the `v0.0.3` release:
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.3.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz
 ```
 
 ### Method 2: Zig Fetch (Main Branch)
