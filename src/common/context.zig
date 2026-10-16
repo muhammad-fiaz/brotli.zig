@@ -27,8 +27,8 @@ pub inline fn contextLut(mode: ContextType) *const [512]u8 {
 /// Computes the literal context id from the previous two bytes using the
 /// combined 512-entry LUT.
 pub inline fn contextId(p1: u8, p2: u8, mode: ContextType) u8 {
-    const lut = contextLut(mode);
-    return lut[p1] | lut[256 + @as(usize, p2)];
+    const base: usize = @as(usize, @backingInt(mode)) << 9;
+    return tables.table[base + p1] | tables.table[base + 256 + p2];
 }
 
 test "context ids are within range" {

@@ -34,26 +34,17 @@ fn hash15(data: []const u8) u32 {
     return (v *% 0x1E35A7BD) >> (32 - 15);
 }
 
-fn strSlice(id: usize) []const u8 {
-    const off = tables.prefix_suffix_map[id];
-    const slen = tables.prefix_suffix[off];
-    return tables.prefix_suffix[off + 1 .. off + 1 + slen];
-}
-
-fn typeAt(ti: usize) transforms.TransformType {
-    return @fromBackingInt(@intCast(tables.transforms_data[ti * 3 + 1]));
-}
-
 /// Resolves the transform whose (prefix, type, suffix) triple matches, or
 /// null when the combination is absent from the format table.
 pub fn tIdOrNull(comptime pre: []const u8, comptime tt: transforms.TransformType, comptime suf: []const u8) ?u16 {
     @setEvalBranchQuota(200000);
-    var i: usize = 0;
-    while (i < transforms.num_transforms) : (i += 1) {
-        if (typeAt(i) != tt) continue;
-        if (!std.mem.eql(u8, strSlice(tables.transforms_data[i * 3]), pre)) continue;
-        if (!std.mem.eql(u8, strSlice(tables.transforms_data[i * 3 + 2]), suf)) continue;
-        return @intCast(i);
+    inline for (tables.transforms, 0..) |tr, i| {
+        if (tr.type_id == @backingInt(tt) and
+            std.mem.eql(u8, tables.prefixes_and_suffixes[tr.prefix_id], pre) and
+            std.mem.eql(u8, tables.prefixes_and_suffixes[tr.suffix_id], suf))
+        {
+            return @intCast(i);
+        }
     }
     return null;
 }

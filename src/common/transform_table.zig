@@ -61,6 +61,36 @@ pub const num_transforms = transforms_data.len / 3;
 /// Indices of transforms like ["", OMIT_LAST_#, """]; 0-th is identity.
 pub const cut_off_transforms = [10]i16{ 0, 12, 27, 23, 42, 63, 56, 48, 59, 64 };
 
+pub const Transform = struct {
+    prefix_id: u8,
+    type_id: u8,
+    suffix_id: u8,
+};
+
+/// Pre-sliced views of the 50 RFC 7932 prefix and suffix strings.
+pub const prefixes_and_suffixes: [50][]const u8 = blk: {
+    var arr: [50][]const u8 = undefined;
+    for (0..50) |i| {
+        const off = prefix_suffix_map[i];
+        const len = prefix_suffix[off];
+        arr[i] = prefix_suffix[off + 1 .. off + 1 + len];
+    }
+    break :blk arr;
+};
+
+/// Structured transform definitions (121 transforms).
+pub const transforms: [num_transforms]Transform = blk: {
+    var arr: [num_transforms]Transform = undefined;
+    for (0..num_transforms) |i| {
+        arr[i] = .{
+            .prefix_id = transforms_data[i * 3 + 0],
+            .type_id = transforms_data[i * 3 + 1],
+            .suffix_id = transforms_data[i * 3 + 2],
+        };
+    }
+    break :blk arr;
+};
+
 const std = @import("std");
 
 test "transform table counts are self-consistent" {
