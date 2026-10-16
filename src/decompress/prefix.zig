@@ -17,30 +17,15 @@ pub const CmdLutElement = extern struct {
     copy_len_offset: u16,
 };
 
-const kInsertLengthExtraBits = [24]u8{
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03,
-    0x04, 0x04, 0x05, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0C, 0x0E, 0x18,
-};
-const kCopyLengthExtraBits = [24]u8{
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x02, 0x02,
-    0x03, 0x03, 0x04, 0x04, 0x05, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x18,
-};
+pub const kInsertLengthExtraBits = ranges.kInsertLengthExtraBits;
+pub const kCopyLengthExtraBits = ranges.kCopyLengthExtraBits;
+pub const insert_length_offsets = ranges.insert_length_offsets;
+pub const copy_length_offsets = ranges.copy_length_offsets;
 const kCellPos = [11]u8{ 0, 1, 0, 1, 8, 9, 2, 16, 10, 17, 18 };
 
 fn buildCmdLut() [constants.NUM_COMMAND_SYMBOLS]CmdLutElement {
     @setEvalBranchQuota(100000);
     var items: [constants.NUM_COMMAND_SYMBOLS]CmdLutElement = undefined;
-
-    var insert_length_offsets: [24]u32 = undefined;
-    var copy_length_offsets: [24]u32 = undefined;
-    insert_length_offsets[0] = 0;
-    copy_length_offsets[0] = 2;
-    for (0..23) |i| {
-        insert_length_offsets[i + 1] =
-            insert_length_offsets[i] + (@as(u32, 1) << @intCast(kInsertLengthExtraBits[i]));
-        copy_length_offsets[i + 1] =
-            copy_length_offsets[i] + (@as(u32, 1) << @intCast(kCopyLengthExtraBits[i]));
-    }
 
     for (0..constants.NUM_COMMAND_SYMBOLS) |symbol| {
         const cell_idx = symbol >> 6;

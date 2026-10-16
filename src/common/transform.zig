@@ -44,34 +44,26 @@ pub const num_transforms = tables.num_transforms;
 pub const cut_off_transforms = tables.cut_off_transforms;
 
 inline fn prefixId(i: usize) u8 {
-    return transforms_data[i * 3 + 0];
+    return tables.transforms[i].prefix_id;
 }
 inline fn typeOf(i: usize) TransformType {
-    return @fromBackingInt(@intCast(transforms_data[i * 3 + 1]));
+    return @fromBackingInt(@intCast(tables.transforms[i].type_id));
 }
 inline fn suffixId(i: usize) u8 {
-    return transforms_data[i * 3 + 2];
+    return tables.transforms[i].suffix_id;
 }
 
-fn prefixedString(id: u8) []const u8 {
-    const off: usize = prefix_suffix_map[id];
-    const len: usize = prefix_suffix[off];
-    return prefix_suffix[off + 1 .. off + 1 + len];
+pub inline fn prefixOf(transform_idx: usize) []const u8 {
+    return tables.prefixes_and_suffixes[tables.transforms[transform_idx].prefix_id];
 }
 
-pub fn prefixOf(transform_idx: usize) []const u8 {
-    return prefixedString(prefixId(transform_idx));
-}
-
-pub fn suffixOf(transform_idx: usize) []const u8 {
-    return prefixedString(suffixId(transform_idx));
+pub inline fn suffixOf(transform_idx: usize) []const u8 {
+    return tables.prefixes_and_suffixes[tables.transforms[transform_idx].suffix_id];
 }
 
 fn toUpperCase(p: []u8) usize {
     if (p[0] < 0xC0) {
-        if (std.ascii.isLower(p[0])) {
-            p[0] = std.ascii.toUpper(p[0]);
-        }
+        p[0] = std.ascii.toUpper(p[0]);
         return 1;
     }
     // An overly simplified uppercasing model for UTF-8.
@@ -132,11 +124,12 @@ pub fn transformDictionaryWord(
     transform_idx: usize,
 ) usize {
     var idx: usize = 0;
-    const t = typeOf(transform_idx);
-    const ti = @backingInt(t);
+    const tr = tables.transforms[transform_idx];
+    const t: TransformType = @fromBackingInt(@intCast(tr.type_id));
+    const ti = tr.type_id;
     var wlen: i32 = @intCast(word.len);
     // Prefix copy.
-    const pre = prefixOf(transform_idx);
+    const pre = tables.prefixes_and_suffixes[tr.prefix_id];
     @memcpy(dst[idx .. idx + pre.len], pre);
     idx += pre.len;
     // Word copy with omission.
@@ -150,10 +143,10 @@ pub fn transformDictionaryWord(
         wi += skip;
         wlen -= @intCast(skip);
     }
-    var i: usize = 0;
-    while (i < wlen) : (i += 1) {
-        dst[idx] = word[wi + i];
-        idx += 1;
+    if (wlen > 0) {
+        const copy_len: usize = @intCast(wlen);
+        @memcpy(dst[idx .. idx + copy_len], word[wi .. wi + copy_len]);
+        idx += copy_len;
     }
     // In-place post-processing of the copied word.
     const start = idx - @as(usize, @intCast(@max(wlen, 0)));
@@ -175,7 +168,7 @@ pub fn transformDictionaryWord(
         else => {},
     }
     // Suffix copy.
-    const suf = suffixOf(transform_idx);
+    const suf = tables.prefixes_and_suffixes[tr.suffix_id];
     @memcpy(dst[idx .. idx + suf.len], suf);
     idx += suf.len;
     return idx;

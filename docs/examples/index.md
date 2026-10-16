@@ -18,6 +18,7 @@ All examples are standalone executables registered as build steps.
 | `error_handling` | `examples/error_handling.zig` | Corruption, truncation, and detailed error codes |
 | `format_introspection` | `examples/format_introspection.zig` | Version, quality/window bounds, format constants |
 | `bit_level` | `examples/bit_level.zig` | Low-level bit reader/writer primitives |
+| `io_pipeline` | `examples/io_pipeline.zig` | In-memory, caller-buffer, reader/writer, and chunked I/O shapes |
 
 ## Run
 
@@ -31,6 +32,7 @@ zig build run-reusable_context
 zig build run-error_handling
 zig build run-format_introspection
 zig build run-bit_level
+zig build run-io_pipeline
 
 # everything at once
 zig build run-all-examples

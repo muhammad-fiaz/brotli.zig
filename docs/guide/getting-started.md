@@ -21,7 +21,7 @@ Add brotli.zig to your `build.zig.zon`:
 
 ```zig
 .brotli = .{
-    .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz",
+    .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.5.tar.gz",
     .hash = "...",  // use zig fetch --save to get the hash
 },
 ```
@@ -69,7 +69,7 @@ pub fn main() !void {
 
 ### With Quality Level
 
-Quality is a plain `u32` in range 0â€“11:
+Quality is a plain `u32` in the range `0..11`:
 
 ```zig
 // Fastest

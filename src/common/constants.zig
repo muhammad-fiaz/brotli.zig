@@ -31,7 +31,7 @@ pub const MAX_NPOSTFIX = 3;
 pub const MAX_NDIRECT = 120;
 pub const MAX_DISTANCE_BITS = 24;
 
-/// BROTLI_NUM_DISTANCE_SYMBOLS == 1128.
+/// Widest distance alphabet over all supported configurations (1128 symbols).
 pub const NUM_DISTANCE_SYMBOLS: u32 =
     NUM_DISTANCE_SHORT_CODES + MAX_NDIRECT + (LARGE_MAX_DISTANCE_BITS << (MAX_NPOSTFIX + 1));
 
@@ -68,8 +68,8 @@ pub const DistanceCodeLimit = struct {
 };
 
 /// Calculates the maximal size of the distance alphabet such that distances
-/// greater than `max_distance` cannot be represented. See constants.h for a
-/// detailed rationale (complete "distance code groups" only).
+/// greater than `max_distance` cannot be represented. Only complete distance
+/// code groups are admitted.
 pub fn calculateDistanceCodeLimit(
     max_distance: u32,
     npostfix: u32,
@@ -80,16 +80,11 @@ pub fn calculateDistanceCodeLimit(
     }
     // The first prohibited value.
     var offset: u32 = max_distance + 1 - ndirect - 1;
-    var ndistbits: u32 = 0;
     // Postfix for the last dcode in the group.
     const postfix = (@as(u32, 1) << @intCast(npostfix)) - 1;
     offset = (offset >> @intCast(npostfix)) + 4;
-    var tmp = offset / 2;
-    while (tmp != 0) {
-        ndistbits += 1;
-        tmp >>= 1;
-    }
-    ndistbits -= 1;
+    const tmp = offset / 2;
+    var ndistbits: u32 = std.math.log2_int(u32, tmp);
     const half = (offset >> @intCast(ndistbits)) & 1;
     var group = ((ndistbits - 1) << 1) | half;
     if (group == 0) {

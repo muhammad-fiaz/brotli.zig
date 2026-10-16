@@ -25,8 +25,10 @@ pub const BitReader = struct {
         br.* = init(input);
     }
 
+    /// Bytes left in the current input window. Saturates at zero so that a
+    /// cursor parked past the end of a short window can never underflow.
     pub inline fn availIn(br: *const BitReader) usize {
-        return br.input.len - br.pos;
+        return br.input.len -| br.pos;
     }
 
     /// Number of bits currently held in the accumulator.
@@ -35,7 +37,7 @@ pub const BitReader = struct {
     }
 
     /// Bytes still readable, including whole bytes buffered in the accumulator
-    /// (capped, like BrotliGetRemainingBytes).
+    /// (capped).
     pub fn remainingBytes(br: *const BitReader) usize {
         const cap: usize = @as(usize, 1) << 30;
         return @min(br.availIn() + (br.bit_pos >> 3), cap);
@@ -57,6 +59,12 @@ pub const BitReader = struct {
             br.pos += 8;
             br.bit_pos = 64;
             return;
+        }
+        if (br.bit_pos <= 32 and br.availIn() >= 4) {
+            const next_u32 = std.mem.readInt(u32, br.input[br.pos..][0..4], .little);
+            br.val |= @as(u64, next_u32) << @intCast(br.bit_pos);
+            br.pos += 4;
+            br.bit_pos += 32;
         }
         while (br.bit_pos <= 56 and br.availIn() > 0) {
             br.val |= @as(u64, br.input[br.pos]) << @intCast(br.bit_pos);
@@ -83,10 +91,10 @@ pub const BitReader = struct {
         return br.val & ((@as(u64, 1) << n_bits) -% 1);
     }
 
-    pub inline fn getBits32(br: *const BitReader, n_bits: u5) u64 {
+    pub inline fn getBits32(br: *const BitReader, n_bits: u6) u64 {
         if (n_bits == 0) return 0;
-        if (n_bits == 32) return br.val;
-        return br.getBits(@intCast(n_bits));
+        if (n_bits >= 64) return br.val;
+        return br.getBits(n_bits);
     }
 
     /// Consumes `n_bits`; they must be present.
@@ -145,12 +153,17 @@ pub const BitReader = struct {
 
     /// Returns unconsumed whole accumulator bytes back to the input so that
     /// `availIn` reports exactly the input not yet reflected in decoded data,
-    /// keeping fewer than 8 bits in the accumulator (matching BrotliBitReaderUnload).
+    /// keeping fewer than 8 bits in the accumulator.
     pub fn unload(br: *BitReader) void {
+        // Whole bytes still sitting in the accumulator are handed back to the
+        // input window. Bits that were buffered before the window was last
+        // re-pointed have no byte to go back to, so the number of returned
+        // bytes is clamped to what the current window can actually give.
         const unused_bytes: u32 = br.bit_pos >> 3;
-        if (unused_bytes != 0) {
-            br.pos -= unused_bytes;
-            br.bit_pos -= unused_bytes * 8;
+        const returnable: u32 = @intCast(@min(br.pos, @as(usize, unused_bytes)));
+        if (returnable != 0) {
+            br.pos -= returnable;
+            br.bit_pos -= returnable * 8;
         }
         br.normalize();
     }

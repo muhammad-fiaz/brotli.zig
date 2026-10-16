@@ -31,21 +31,16 @@ pub const BitSink = struct {
     }
 };
 
-fn log2Floor(x: u64) u6 {
-    if (x == 0) return 0;
-    return std.math.log2_int(u64, x);
-}
-
 /// Width in bits used to store one raw symbol of an alphabet of size
-/// `alphabet_size_max` (mirrors the decoder's simple-tree symbol width).
+/// `alphabet_size_max`.
 pub fn alphabetBits(alphabet_size_max: u32) u6 {
     if (alphabet_size_max <= 1) return 1;
-    return @as(u6, log2Floor(alphabet_size_max - 1)) + 1;
+    return @as(u6, @intCast(std.math.log2_int_ceil(u32, alphabet_size_max)));
 }
 
 const EMPTY: u16 = 0xFFFF;
 const UNDEF: usize = 0xFFFF_FFFF;
-const MAX_ALPHABET = 704;
+pub const MAX_ALPHABET = 704;
 
 /// Assigns Huffman code lengths (<= max_depth) to nonzero frequencies.
 /// `depths` is fully overwritten; zero-frequency symbols get depth 0.
@@ -156,8 +151,7 @@ fn exchangeLengths(freqs: []const u32, max_depth: u8, depths: []u8) void {
     };
     std.mem.sort(u16, order[0..m], SortCtx{ .freqs = freqs }, SortCtx.lessThan);
 
-    var k: u6 = 0;
-    while ((@as(usize, 1) << @as(u5, @intCast(k))) < m) k += 1;
+    const k: u6 = @intCast(std.math.log2_int_ceil(usize, @max(1, m)));
     // k = ceil(log2(m)); complete tree: x leaves at depth k-1, y at depth k.
     const kk: usize = k;
     const x: usize = (@as(usize, 1) << @intCast(kk)) - m;
@@ -200,17 +194,20 @@ fn kraftSum(depths: []const u8, max_depth: u8) u64 {
 /// transmission order: the bit sink emits LSB-first while prefix codes are
 /// matched most-significant-bit first, so stored codes are bit-reversed.
 pub fn assignCanonicalCodes(depths: []const u8, codes: []u16) void {
+    var bl_count: [MAX_CODE_LENGTH + 1]u32 = @splat(0);
+    for (depths) |d| {
+        if (d <= MAX_CODE_LENGTH) {
+            bl_count[d] += 1;
+        }
+    }
+
     var next: [MAX_CODE_LENGTH + 2]u32 = undefined;
     var code: u32 = 0;
-    var l: usize = 1;
-    while (l <= MAX_CODE_LENGTH) : (l += 1) {
+    for (1..MAX_CODE_LENGTH + 1) |l| {
         next[l] = code;
-        var cnt: u32 = 0;
-        for (depths) |d| {
-            if (d == l) cnt += 1;
-        }
-        code = (code + cnt) << 1;
+        code = (code + bl_count[l]) << 1;
     }
+
     for (depths, 0..) |d, sym| {
         if (d == 0) {
             codes[sym] = 0;
@@ -224,13 +221,8 @@ pub fn assignCanonicalCodes(depths: []const u8, codes: []u16) void {
 
 /// Reverses the low `n` bits of `v`.
 fn reverseN(v: u16, n: u5) u16 {
-    var r: u16 = 0;
-    var i: u4 = 0;
-    while (i < n) : (i += 1) {
-        const bit: u16 = (v >> i) & 1;
-        r |= bit << @intCast(n - 1 - i);
-    }
-    return r;
+    if (n == 0) return 0;
+    return @bitReverse(v) >> @as(u4, @intCast(16 - @as(u5, n)));
 }
 
 fn emitClLength(w: *BitSink, len: u8) void {
@@ -321,92 +313,189 @@ pub fn storeHuffmanTree(
         if (d > max_d) max_d = d;
     }
     const force_split = min_d != 255 and min_d == max_d;
-    histogramDepths(depths[0..limit], &cl_freqs, force_split);
 
-    // Degenerate case: exactly ONE distinct CL symbol (all lengths equal).
-    // The nested tree then carries a single nominal entry; the decoder's
-    // single-code table answers every lookup with that length at zero bits.
-    var used_cl: usize = 0;
-    var only_sym: u8 = 0;
-    for (cl_freqs, 0..) |f, s| {
-        if (f != 0) {
-            used_cl += 1;
-            only_sym = @intCast(s);
+    // A repeat symbol shortens the code-length stream but adds an entry to the
+    // code-length alphabet, which in turn enlarges the nested tree. Which
+    // effect wins depends on the shape of this particular tree, so serialize
+    // both plans into a scratch sink and keep whichever is actually shorter.
+    var scratch: [2048]u8 = @splat(0);
+    var best_repeats = false;
+    var best_len: usize = std.math.maxInt(usize);
+
+    for ([_]bool{ false, true }) |allow| {
+        var probe_freqs: [18]u32 = @splat(0);
+        histogramDepths(depths[0..limit], &probe_freqs, force_split, allow);
+
+        // The trial sink starts at zero: only the relative length of this
+        // section matters, and seeding it with the caller's absolute position
+        // would index far outside the scratch buffer.
+        var trial: BitSink = .{ .buf = &scratch };
+        var probe_depths: [18]u8 = undefined;
+        emitClSection(&trial, depths[0..limit], &probe_freqs, force_split, allow, &probe_depths);
+
+        const len = trial.pos;
+        if (len < best_len) {
+            best_len = len;
+            best_repeats = allow;
         }
     }
-    if (used_cl == 1) {
+
+    // Re-plan with the winner so the emitted bits and the tables agree.
+    @memset(&cl_freqs, 0);
+    histogramDepths(depths[0..limit], &cl_freqs, force_split, best_repeats);
+
+    // Fill the caller-visible code tables for later symbol emission.
+    assignCanonicalCodes(depths[0..limit], codes);
+
+    emitClSection(w, depths[0..limit], &cl_freqs, force_split, best_repeats, cl_depths);
+}
+
+/// Emits the nested code-length tree description followed by the code-length
+/// stream itself.
+///
+/// Handles the degenerate case where the code-length alphabet ends up with a
+/// single distinct symbol: the nested table is then written with a single
+/// zero-width entry, so every code-length symbol is emitted for free and no
+/// repeat symbol may be used.
+fn emitClSection(
+    w: *BitSink,
+    depths: []const u8,
+    cl_freqs: *const [18]u32,
+    force_split: bool,
+    allow_repeats: bool,
+    cl_depths: []u8,
+) void {
+    var used_cl: usize = 0;
+    var only_sym: u8 = 0;
+    for (cl_freqs, 0..) |f, sym| {
+        if (f != 0) {
+            used_cl += 1;
+            only_sym = @intCast(sym);
+        }
+    }
+
+    if (used_cl <= 1) {
         @memset(cl_depths[0..18], 0);
         cl_depths[only_sym] = 1;
-        var idx2: usize = 0;
+        var idx: usize = 0;
         var spc: u32 = 32;
-        while (idx2 < 18) : (idx2 += 1) {
-            const sym2 = prefix.code_length_prefix_order[idx2];
+        while (idx < 18) : (idx += 1) {
+            const sym2 = prefix.code_length_prefix_order[idx];
             emitClLength(w, cl_depths[sym2]);
             if (cl_depths[sym2] != 0) {
                 spc = spc -% (@as(u32, 32) >> @intCast(cl_depths[sym2]));
                 if (spc == 0 or spc > 32) break;
             }
         }
-        // Zero-width emission context: every lookup yields `only_sym`.
-        var z_depths: [18]u8 = @splat(0);
-        z_depths[only_sym] = 0;
+        const z_depths: [18]u8 = @splat(0);
         const z_codes: [18]u16 = @splat(0);
-        const ctx = ClContext{ .codes = z_codes, .depths = z_depths };
-        emitDepthSymbols(w, depths[0..limit], &ctx, false);
-        assignCanonicalCodes(depths[0..limit], codes);
+        const zctx = ClContext{ .codes = z_codes, .depths = z_depths };
+        emitDepthSymbols(w, depths, &zctx, false, false);
         return;
     }
 
-    generateCodeLengths(&cl_freqs, 5, cl_depths[0..18]);
+    generateCodeLengths(cl_freqs, 5, cl_depths[0..18]);
     var cl_codes: [18]u16 = undefined;
     assignCanonicalCodes(cl_depths[0..18], &cl_codes);
 
-    // Fill the caller-visible code tables for later symbol emission.
-    assignCanonicalCodes(depths[0..limit], codes);
-
-    // Emit the nested CL tree in the decoder's reordered symbol sequence,
-    // stopping exactly when the Kraft space is exhausted (mirrors decode).
-    var space: u32 = 32;
-    var nonzeros: usize = 0;
-    var i: usize = 0;
-    while (i < 18) : (i += 1) {
-        const sym = prefix.code_length_prefix_order[i];
-        emitClLength(w, cl_depths[sym]);
-        if (cl_depths[sym] != 0) {
-            space = space -% (@as(u32, 32) >> @intCast(cl_depths[sym]));
-            nonzeros += 1;
-            if (space == 0 or space > 32) break;
+    var spc: u32 = 32;
+    var idx: usize = 0;
+    while (idx < 18) : (idx += 1) {
+        const sym2 = prefix.code_length_prefix_order[idx];
+        emitClLength(w, cl_depths[sym2]);
+        if (cl_depths[sym2] != 0) {
+            spc = spc -% (@as(u32, 32) >> @intCast(cl_depths[sym2]));
+            if (spc == 0 or spc > 32) break;
         }
     }
-    std.debug.assert(nonzeros >= 2 or nonzeros == 1);
 
     const ctx = ClContext{ .codes = cl_codes, .depths = cl_depths[0..18].* };
-    emitDepthSymbols(w, depths[0..limit], &ctx, force_split);
+    emitDepthSymbols(w, depths, &ctx, force_split, allow_repeats);
 }
 
-/// Counts CL symbols produced by the exact scheme `emitDepthSymbols` uses.
-/// Repeat codes are never emitted adjacently: the decoder's repeat counter
-/// accumulates across consecutive repeats ((r-2)*4 + e + 3), so pairing each
-/// repeat with an intervening direct symbol keeps coverage exact.
-fn histogramDepths(depths: []const u8, cl_freqs: *[18]u32, force_split: bool) void {
+/// One code-length-alphabet emission: a symbol plus optional extra bits.
+pub const ClItem = struct {
+    sym: u8,
+    nbits: u4 = 0,
+    nval: u8 = 0,
+};
+
+const MAX_CL_ITEMS: usize = 1024;
+
+/// Plans the code-length-alphabet stream for one tree.
+///
+/// The plan is the single source of truth for both the CL histogram and the
+/// emitted bits, so the two can never drift apart. It stops exactly when the
+/// Kraft space saturates, which is the same point the decoder stops.
+///
+/// Runs of equal code lengths are run-length encoded with the format's repeat
+/// symbols. The first entry of a run is always written literally, which
+/// establishes the "previous non-zero length"; symbol 16 then covers 3 to 6
+/// further copies and symbol 17 covers 3 to 10 further zeroes, with two and
+/// three extra bits respectively. Only the first of a run is charged to the
+/// space budget directly, the rest are charged through the repeat.
+///
+/// `allow_repeats` must be false for the degenerate all-one-symbol case, where
+/// the CL table is emitted with zero width and every symbol would be free.
+fn planCodeLengths(
+    depths: []const u8,
+    force_split: bool,
+    allow_repeats: bool,
+    out: *[MAX_CL_ITEMS]ClItem,
+) usize {
+    var count: usize = 0;
     var space: u32 = 1 << MAX_CODE_LENGTH;
     var start: usize = 0;
+
     if (force_split and depths.len != 0 and depths[0] != 0) {
-        cl_freqs[depths[0]] += 1;
+        out[count] = .{ .sym = depths[0] };
+        count += 1;
         space -%= @as(u32, 1) << @intCast(MAX_CODE_LENGTH - depths[0]);
         start = 1;
     }
+
     var i = start;
-    while (i < depths.len and space != 0) : (i += 1) {
+    while (i < depths.len and space != 0) {
         const d = depths[i];
-        if (d == 0) {
-            cl_freqs[0] += 1;
-            continue;
+
+        var run_end = i + 1;
+        if (allow_repeats) {
+            while (run_end < depths.len and depths[run_end] == d) run_end += 1;
         }
-        cl_freqs[d] += 1;
-        space -%= @as(u32, 1) << @intCast(MAX_CODE_LENGTH - d);
+        // Copies beyond the first that a single repeat symbol can cover.
+        const more = run_end - (i + 1);
+        const can_repeat = more >= 3 and
+            (if (d == 0) more <= 10 else more <= 6);
+
+        out[count] = .{ .sym = d };
+        count += 1;
+        if (d != 0) space -%= @as(u32, 1) << @intCast(MAX_CODE_LENGTH - d);
+
+        // A repeat may only follow when space budget remains.
+        if (can_repeat and space != 0) {
+            if (d == 0) {
+                out[count] = .{ .sym = 17, .nbits = 3, .nval = @intCast(more - 3) };
+                count += 1;
+                i += 1 + more;
+            } else {
+                out[count] = .{ .sym = 16, .nbits = 2, .nval = @intCast(more - 3) };
+                count += 1;
+                space -%= @as(u32, @intCast(more)) << @intCast(MAX_CODE_LENGTH - d);
+                i += 1 + more;
+            }
+        } else {
+            i += 1;
+        }
     }
+    return count;
 }
+
+fn histogramDepths(depths: []const u8, cl_freqs: *[18]u32, force_split: bool, allow_repeats: bool) void {
+    var items: [MAX_CL_ITEMS]ClItem = undefined;
+    const n = planCodeLengths(depths, force_split, allow_repeats, &items);
+    for (items[0..n]) |it| cl_freqs[it.sym] += 1;
+}
+
 fn emitClSymbol(w: *BitSink, sym: u8, ctx: *const ClContext) void {
     const d = ctx.depths[sym];
     if (d != 0) w.putBits(@intCast(d), ctx.codes[sym]);
@@ -417,24 +506,284 @@ pub const ClContext = struct {
     depths: [18]u8,
 };
 
-/// Emits per-symbol code lengths directly (no repeat codes), stopping
-/// exactly when the Kraft sum saturates. Mirrors `histogramDepths`.
-fn emitDepthSymbols(w: *BitSink, depths: []const u8, ctx: *const ClContext, force_split: bool) void {
-    var space: u32 = 1 << MAX_CODE_LENGTH;
-    var start: usize = 0;
-    if (force_split and depths.len != 0 and depths[0] != 0) {
-        emitClSymbol(w, depths[0], ctx);
-        space -%= @as(u32, 1) << @intCast(MAX_CODE_LENGTH - depths[0]);
-        start = 1;
+/// Writes the planned code-length-alphabet stream.
+fn emitDepthSymbols(
+    w: *BitSink,
+    depths: []const u8,
+    ctx: *const ClContext,
+    force_split: bool,
+    allow_repeats: bool,
+) void {
+    var items: [MAX_CL_ITEMS]ClItem = undefined;
+    const n = planCodeLengths(depths, force_split, allow_repeats, &items);
+    for (items[0..n]) |it| {
+        emitClSymbol(w, it.sym, ctx);
+        // Repeat symbols carry their count in trailing extra bits.
+        if (it.nbits != 0) w.putBits(it.nbits, it.nval);
     }
-    var i = start;
-    while (i < depths.len and space != 0) : (i += 1) {
-        const d = depths[i];
-        if (d == 0) {
-            emitClSymbol(w, 0, ctx);
-            continue;
+}
+
+/// Adjusts histogram frequencies to improve RLE compression of Huffman code lengths.
+pub fn optimizeHuffmanCountsForRle(counts: []u32) void {
+    var length = counts.len;
+    var nonzero_count: usize = 0;
+    for (counts[0..length]) |c| {
+        if (c != 0) nonzero_count += 1;
+    }
+    if (nonzero_count < 16) return;
+
+    while (length != 0 and counts[length - 1] == 0) {
+        length -= 1;
+    }
+    if (length == 0) return;
+
+    {
+        var nonzeros: usize = 0;
+        var smallest_nonzero: u32 = 1 << 30;
+        for (counts[0..length]) |c| {
+            if (c != 0) {
+                nonzeros += 1;
+                if (smallest_nonzero > c) smallest_nonzero = c;
+            }
         }
-        emitClSymbol(w, d, ctx);
-        space -%= @as(u32, 1) << @intCast(MAX_CODE_LENGTH - d);
+        if (nonzeros < 5) return;
+        if (smallest_nonzero < 4) {
+            const zeros = length - nonzeros;
+            if (zeros < 6) {
+                var i: usize = 1;
+                while (i + 1 < length) : (i += 1) {
+                    if (counts[i - 1] != 0 and counts[i] == 0 and counts[i + 1] != 0) {
+                        counts[i] = 1;
+                    }
+                }
+            }
+        }
+        if (nonzeros < 28) return;
+    }
+
+    if (length > MAX_ALPHABET) return;
+    var good_for_rle: [MAX_ALPHABET]u8 = @splat(0);
+    {
+        var symbol: u32 = counts[0];
+        var step: usize = 0;
+        for (0..length + 1) |i| {
+            if (i == length or counts[i] != symbol) {
+                if ((symbol == 0 and step >= 5) or (symbol != 0 and step >= 7)) {
+                    for (0..step) |k| {
+                        good_for_rle[i - k - 1] = 1;
+                    }
+                }
+                step = 1;
+                if (i != length) {
+                    symbol = counts[i];
+                }
+            } else {
+                step += 1;
+            }
+        }
+    }
+
+    const streak_limit: usize = 1240;
+    var stride: usize = 0;
+    var limit: usize = (256 * (@as(usize, counts[0]) + counts[1] + counts[2])) / 3 + 420;
+    var sum: usize = 0;
+    for (0..length + 1) |i| {
+        var break_stride = false;
+        if (i == length or good_for_rle[i] != 0 or (i != 0 and good_for_rle[i - 1] != 0)) {
+            break_stride = true;
+        } else {
+            const val: i64 = @as(i64, @intCast(counts[i])) * 256 - @as(i64, @intCast(limit));
+            if (val + @as(i64, streak_limit) < 0 or val + @as(i64, streak_limit) >= @as(i64, 2 * streak_limit)) {
+                break_stride = true;
+            }
+        }
+
+        if (break_stride) {
+            if (stride >= 4 or (stride >= 3 and sum == 0)) {
+                var count: usize = (sum + stride / 2) / stride;
+                if (count == 0) count = 1;
+                if (sum == 0) count = 0;
+                for (0..stride) |k| {
+                    counts[i - k - 1] = @intCast(count);
+                }
+            }
+            stride = 0;
+            sum = 0;
+            if (i + 2 < length) {
+                limit = (256 * (@as(usize, counts[i]) + counts[i + 1] + counts[i + 2])) / 3 + 420;
+            } else if (i < length) {
+                limit = 256 * counts[i];
+            } else {
+                limit = 0;
+            }
+        }
+        stride += 1;
+        if (i != length) {
+            sum += counts[i];
+            if (stride >= 4) {
+                limit = (256 * sum + stride / 2) / stride;
+            }
+            if (stride == 4) {
+                limit += 120;
+            }
+        }
+    }
+}
+
+test "optimizeHuffmanCountsForRle handles sparse and dense counts safely" {
+    var sparse: [256]u32 = @splat(0);
+    sparse[10] = 5;
+    sparse[20] = 8;
+    optimizeHuffmanCountsForRle(&sparse);
+    try std.testing.expectEqual(@as(u32, 5), sparse[10]);
+    try std.testing.expectEqual(@as(u32, 8), sparse[20]);
+
+    var dense: [256]u32 = @splat(0);
+    for (0..60) |i| {
+        dense[i] = @intCast(10 + (i % 3));
+    }
+    optimizeHuffmanCountsForRle(&dense);
+    // Nonzero count should remain intact or smoothed
+    var nz: usize = 0;
+    for (dense) |c| if (c != 0) {
+        nz += 1;
+    };
+    try std.testing.expect(nz >= 50);
+}
+
+test "code-length plan covers every entry until the Kraft space saturates" {
+    // A complete uniform tree: every symbol is described exactly once.
+    var depths: [256]u8 = @splat(8);
+    var items: [MAX_CL_ITEMS]ClItem = undefined;
+    const n = planCodeLengths(&depths, false, false, &items);
+    try std.testing.expectEqual(@as(usize, 256), n);
+    for (items[0..n]) |it| try std.testing.expectEqual(@as(u8, 8), it.sym);
+
+    // A tree that saturates early only describes its leading symbols.
+    var early: [256]u8 = undefined;
+    for (&early, 0..) |*d, i| d.* = if (i % 2 == 0) 1 else 0;
+    const m = planCodeLengths(&early, false, false, &items);
+    try std.testing.expectEqual(@as(usize, 3), m);
+}
+
+test "code-length plan histogram matches the emitted symbols" {
+    // The histogram and the bit stream are produced from one plan, so they
+    // cannot drift apart.
+    var depths: [704]u8 = @splat(0);
+    var k: usize = 0;
+    while (k < 704) : (k += 1) {
+        if (k % 97 == 0) depths[k] = 4;
+    }
+    depths[0] = 6;
+
+    var items: [MAX_CL_ITEMS]ClItem = undefined;
+    const n = planCodeLengths(&depths, false, false, &items);
+
+    var counted: [18]u32 = @splat(0);
+    for (items[0..n]) |it| counted[it.sym] += 1;
+
+    var viaHistogram: [18]u32 = @splat(0);
+    histogramDepths(&depths, &viaHistogram, false, false);
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&counted), std.mem.asBytes(&viaHistogram));
+
+    // Every symbol the plan references must be representable.
+    for (items[0..n]) |it| try std.testing.expect(it.sym < 18);
+}
+
+test "code-length plan stops before overrunning the alphabet" {
+    var depths: [64]u8 = @splat(0);
+    for (0..64) |i| depths[i] = if (i % 3 == 0) 2 else 0;
+    var items: [MAX_CL_ITEMS]ClItem = undefined;
+    const n = planCodeLengths(&depths, false, false, &items);
+    try std.testing.expect(n <= depths.len);
+}
+
+test "code-length plan emits repeat symbols for long runs" {
+    var items: [MAX_CL_ITEMS]ClItem = undefined;
+
+    // A run of equal non-zero lengths that fits symbol 16's count of 3 to 6.
+    var nonzero: [256]u8 = @splat(0);
+    nonzero[0] = 2;
+    for (1..6) |i| nonzero[i] = 2;
+    const n16 = planCodeLengths(&nonzero, false, true, &items);
+    var saw16 = false;
+    for (items[0..n16]) |it| if (it.sym == 16) {
+        saw16 = true;
+        try std.testing.expect(it.nbits == 2);
+        // Symbol 16 carries a count of 3..6 further copies.
+        try std.testing.expect(it.nval >= 0 and it.nval <= 3);
+    };
+    try std.testing.expect(saw16);
+
+    // A run of zeroes that fits symbol 17's count of 3 to 10.
+    var zeros: [256]u8 = @splat(0);
+    zeros[0] = 3;
+    for (1..8) |i| zeros[i] = 0;
+    const n17 = planCodeLengths(&zeros, false, true, &items);
+    var saw17 = false;
+    for (items[0..n17]) |it| if (it.sym == 17) {
+        saw17 = true;
+        try std.testing.expect(it.nbits == 3);
+        // Symbol 17 carries a count of 3..10 further zeroes.
+        try std.testing.expect(it.nval <= 7);
+    };
+    try std.testing.expect(saw17);
+}
+
+test "code-length plan emits only applicable repeats" {
+    var items: [MAX_CL_ITEMS]ClItem = undefined;
+    var depths: [256]u8 = @splat(0);
+
+    // Mixed runs, including a run that starts immediately after a zero run.
+    depths[0] = 0;
+    depths[1] = 5;
+    for (2..8) |i| depths[i] = 5;
+    for (8..18) |i| depths[i] = 0;
+    for (18..24) |i| depths[i] = 7;
+    depths[24] = 3;
+
+    const n = planCodeLengths(&depths, false, true, &items);
+
+    // Symbol 16 may only follow a literal non-zero length; replay the plan
+    // in decode order and confirm every repeat resolves.
+    var prev_non_zero: ?u8 = null;
+    var expect_prev: ?u8 = null;
+    for (items[0..n]) |it| {
+        switch (it.sym) {
+            0 => prev_non_zero = null,
+            16 => {
+                const p = prev_non_zero orelse return error.BadPlan;
+                if (expect_prev) |e| try std.testing.expectEqual(e, p);
+                expect_prev = p;
+            },
+            17 => expect_prev = null,
+            else => {
+                prev_non_zero = it.sym;
+                expect_prev = null;
+            },
+        }
+        try std.testing.expect(it.sym < 18);
+    }
+}
+
+test "repeats are only planned when they fit the format's count limits" {
+    var items: [MAX_CL_ITEMS]ClItem = undefined;
+
+    // Two equal lengths cannot be a repeat; three copies is the minimum.
+    var short_run: [256]u8 = @splat(0);
+    short_run[0] = 4;
+    short_run[1] = 4;
+    const n = planCodeLengths(&short_run, false, true, &items);
+    for (items[0..n]) |it| try std.testing.expect(it.sym != 16);
+
+    // A zero-length run uses 17, which can express at most ten more zeroes.
+    var zeros: [256]u8 = @splat(0);
+    zeros[0] = 2;
+    for (1..12) |i| zeros[i] = 0;
+    const m = planCodeLengths(&zeros, false, true, &items);
+    for (items[0..m]) |it| {
+        if (it.sym != 17) continue;
+        try std.testing.expectEqual(@as(u4, 3), it.nbits);
+        try std.testing.expect(it.nval <= 7);
     }
 }

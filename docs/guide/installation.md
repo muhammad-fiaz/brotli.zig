@@ -13,7 +13,7 @@ description: How to install and set up brotli.zig in your Zig project.
 - Supported architectures: x86_64, aarch64, x86
 
 ::: info Version Compatibility
-This library (`v0.0.4+`) requires **Zig 0.17.0** as declared in `build.zig.zon` (`minimum_zig_version = "0.17.0"`). For **Zig 0.16.0** support, install release `v0.0.3` (see [Method 1](#method-1-zig-fetch-recommended--latest-release) below).
+This library (`v0.0.5+`) requires **Zig 0.17.0** as declared in `build.zig.zon` (`minimum_zig_version = "0.17.0"`). For **Zig 0.16.0** support, install release `v0.0.3` (see [Method 1](#method-1-zig-fetch-recommended--latest-release) below).
 :::
 
 ## Setup
@@ -21,15 +21,15 @@ This library (`v0.0.4+`) requires **Zig 0.17.0** as declared in `build.zig.zon` 
 ### Method 1: Zig Fetch (Recommended) - Latest Release
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.5.tar.gz
 ```
 
-This corresponds to `build.zig.zon` version `0.0.4`:
+This corresponds to `build.zig.zon` version `0.0.5`:
 
 ```zig
 .{
     .name = .brotli,
-    .version = "0.0.4",
+    .version = "0.0.5",
     .minimum_zig_version = "0.17.0",
     // ...
 }
@@ -56,7 +56,7 @@ Add the dependency to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .brotli = .{
-        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.5.tar.gz",
         .hash = "...", // Run `zig fetch --save <url>` to generate the hash.
     },
 },

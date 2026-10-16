@@ -24,6 +24,10 @@ pub const StreamingDecompressor = struct {
     inbuf: std.ArrayList(u8),
     fed_pos: usize = 0,
     finished_: bool = false,
+    /// Set by `endInput`: no more bytes will ever be fed. Lets `take` tell
+    /// a truncated stream (decoder still needs input) apart from a stream
+    /// that is merely waiting for the next chunk.
+    input_ended: bool = false,
 
     /// Initializes a streaming decompressor with the provided allocator and options.
     pub fn init(allocator: std.mem.Allocator, options: DecompressionOptions) StreamingDecompressor {
@@ -45,6 +49,7 @@ pub const StreamingDecompressor = struct {
         self.inbuf.clearRetainingCapacity();
         self.fed_pos = 0;
         self.finished_ = false;
+        self.input_ended = false;
         self.inner.reset(options);
     }
 
@@ -65,6 +70,7 @@ pub const StreamingDecompressor = struct {
 
     /// Signals no more input will arrive; flushes any remaining partial data.
     pub fn endInput(self: *StreamingDecompressor) void {
+        self.input_ended = true;
         var empty: []const u8 = &.{};
         var avail: []u8 = &.{};
         _ = self.inner.decompressStream(&empty, &avail, null);
@@ -72,9 +78,13 @@ pub const StreamingDecompressor = struct {
 
     /// Decodes into `out`; returns bytes written during this call.
     /// Callers should continue invoking until both `isFinished()` and zero output returned.
+    /// Call `endInput()` after the last `feed`; once ended, a stream that still
+    /// needs input is truncated and `take` reports `error.TruncatedInput`
+    /// instead of stalling with zero bytes forever.
     pub fn take(self: *StreamingDecompressor, out: []u8) !usize {
         var avail: []u8 = out;
         const total_before = self.inner.partial_pos_out;
+        var needs_input = false;
 
         // Feed unconsumed buffered input.
         var unconsumed: []const u8 = self.inbuf.items[self.fed_pos..];
@@ -83,7 +93,8 @@ pub const StreamingDecompressor = struct {
             self.fed_pos = self.inbuf.items.len - unconsumed.len;
             switch (r) {
                 .success => self.finished_ = true,
-                .needs_more_input, .needs_more_output => {},
+                .needs_more_input => needs_input = true,
+                .needs_more_output => {},
                 .err => return error.BrotliStreamError,
             }
             if (self.fed_pos > 0) {
@@ -100,9 +111,17 @@ pub const StreamingDecompressor = struct {
             const r2 = self.inner.decompressStream(&empty, &avail, &self.inner.partial_pos_out);
             switch (r2) {
                 .success => self.finished_ = true,
-                .needs_more_input, .needs_more_output => {},
+                .needs_more_input => needs_input = true,
+                .needs_more_output => {},
                 .err => return error.BrotliStreamError,
             }
+        }
+
+        // No buffered input remains, no more is coming, and the decoder still
+        // wants bytes: the stream is truncated. Fail explicitly rather than
+        // reporting zero progress forever.
+        if (!self.finished_ and self.input_ended and self.inbuf.items.len == 0 and needs_input) {
+            return error.TruncatedInput;
         }
 
         return @intCast(self.inner.partial_pos_out - total_before);
@@ -206,9 +225,7 @@ pub fn decompressStream(
     }
 }
 
-// -------------------------------------------------------------------------
 // Unit Tests
-// -------------------------------------------------------------------------
 const testing = std.testing;
 
 test "StreamingDecompressor on empty finalized stream" {
@@ -276,4 +293,34 @@ test "StreamingDecompressor attachSharedDictionary" {
     var out: [16]u8 = undefined;
     _ = try sd.take(&out);
     try testing.expect(sd.isFinished());
+}
+
+test "StreamingDecompressor reports truncation instead of stalling" {
+    // A truncated stream with endInput() must fail explicitly. Without the
+    // end-of-input check, a take()-until-finished loop spins forever on zero
+    // progress because the decoder keeps reporting needs_more_input.
+    const encoder = @import("../compress/encode.zig");
+    const payload = "streaming truncation must fail explicitly, never stall the caller";
+    const comp = try encoder.compressWithOptions(testing.allocator, payload, .{ .quality = 5 });
+    defer testing.allocator.free(comp);
+
+    var sd = StreamingDecompressor.init(testing.allocator, .{});
+    defer sd.deinit();
+    // Feed only the first half, then end the input.
+    try sd.feed(comp[0 .. comp.len / 2]);
+    sd.endInput();
+
+    var out: [64]u8 = undefined;
+    var calls: usize = 0;
+    while (!sd.isFinished()) {
+        calls += 1;
+        try testing.expect(calls < 1000);
+        const n = sd.take(&out) catch |e| {
+            try testing.expectEqual(error.TruncatedInput, e);
+            return;
+        };
+        _ = n;
+    }
+    // A halved stream must never decode to completion.
+    return error.TruncatedStreamAccepted;
 }

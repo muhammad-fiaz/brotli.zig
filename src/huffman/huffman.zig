@@ -7,11 +7,11 @@ const std = @import("std");
 const constants = @import("../common/constants.zig");
 
 pub const HUFFMAN_MAX_CODE_LENGTH = 15;
-/// BROTLI_NUM_BLOCK_LEN_SYMBOLS == 26
+/// Decoding table size for a 26-symbol block-length alphabet.
 pub const HUFFMAN_MAX_SIZE_26 = 396;
-/// BROTLI_MAX_BLOCK_TYPE_SYMBOLS == 258
+/// Decoding table size for a 258-symbol block-type alphabet.
 pub const HUFFMAN_MAX_SIZE_258 = 632;
-/// BROTLI_MAX_CONTEXT_MAP_SYMBOLS == 272
+/// Decoding table size for a 272-symbol context-map alphabet.
 pub const HUFFMAN_MAX_SIZE_272 = 646;
 pub const HUFFMAN_MAX_CODE_LENGTH_CODE_LENGTH = 5;
 
@@ -37,8 +37,7 @@ inline fn construct(bits: u8, value: u16) HuffmanCode {
     return .{ .bits = bits, .value = value };
 }
 
-/// Stores `code` in table[start], table[start+step], ... up to `end` entries
-/// (counting down by step, like the reference's ReplicateValue).
+/// Stores `code` in table[start], table[start+step], ... up to `end` entries.
 inline fn replicate(table: []HuffmanCode, start: usize, step: usize, end: usize, code: HuffmanCode) void {
     var e = end;
     while (e >= step) {
@@ -62,9 +61,8 @@ fn nextTableBitSize(count: []const u16, len_in: usize, root_bits: usize) usize {
     return len - root_bits;
 }
 
-/// Per-length chains of symbols, replacing the reference's negative-index
-/// layout: `heads[l]` is the first symbol with code length `l`,
-/// `next_of[symbol]` its successor within the same length class.
+/// Per-length chains of symbols: `heads[l]` is the first symbol with code
+/// length `l`, `next_of[symbol]` its successor within the same length class.
 pub const SymbolChains = struct {
     // NOTE: intentionally value-only (no back-pointers); the successor-link
     // storage is passed per-call so the struct can live inside a parent that
@@ -162,8 +160,8 @@ pub fn buildCodeLengthsHuffmanTable(
     }
 }
 
-/// Builds an explicit Huffman decoding table. Consumes (decrements) `count`
-/// exactly like the reference; returns total table entries used.
+/// Builds an explicit Huffman decoding table. Consumes (decrements) `count`;
+/// returns total table entries used.
 pub fn buildHuffmanTable(
     root_table: []HuffmanCode,
     root_bits: comptime_int,

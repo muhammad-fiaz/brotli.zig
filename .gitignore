@@ -34,3 +34,6 @@ Thumbs.db
 # Interoperability test temporaries
 /interop_*
 
+# Temporary diagnostic logs (Phase A-E workflow, never committed)
+/tmp/
+

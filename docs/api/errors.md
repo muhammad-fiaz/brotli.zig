@@ -8,7 +8,7 @@ description: Canonical error set, detailed RFC 7932 error codes, and decoder dia
 `brotli.zig` provides a two-tiered error system:
 
 1. **Standard Zig Error Set (`brotli.Error`)**: Canonical errors returned across public functions.
-2. **Fine-Grained Decoder Diagnostics (`ErrorCode` & `BrotliErrorInfo`)**: Mirroring the C reference library's error codes to pin down the exact byte and RFC 7932 section where bitstream corruption occurred.
+2. **Fine-Grained Decoder Diagnostics (`ErrorCode` & `BrotliErrorInfo`)**: Standard Brotli error codes to pin down the exact byte and RFC 7932 section where bitstream corruption occurred.
 
 ## Canonical Public Error Set (`brotli.Error`)
 

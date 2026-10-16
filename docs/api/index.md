@@ -153,11 +153,11 @@ Streams compressed Brotli data from a `std.Io.Reader` directly to a `std.Io.Writ
 ## Version Accessors
 
 ```zig
-pub const version = "0.0.4";
-pub const version_number: u32 = 4;
+pub const version = "0.0.5";
+pub const version_number: u32 = 5;
 pub const spec_version = "1.2.0";
 pub const spec_version_number: u32 = 10200;
 
-pub fn versionString() []const u8 // Returns "0.0.4"
-pub fn versionNumber() u32        // Returns 4
+pub fn versionString() []const u8 // Returns "0.0.5"
+pub fn versionNumber() u32        // Returns 5
 ```

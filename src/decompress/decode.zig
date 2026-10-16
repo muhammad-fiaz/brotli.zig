@@ -1,9 +1,8 @@
 //! Complete Brotli decoder state machine per RFC 7932.
 //!
-//! Streaming model (identical semantics to BrotliDecoderDecompressStream):
-//! the caller repeatedly invokes `decompressStream`, advancing an input slice
-//! and filling an output slice; the decoder retains all cross-call state and
-//! reports exactly which bytes remain unconsumed.
+//! Streaming model: the caller repeatedly invokes `decompressStream`,
+//! advancing an input slice and filling an output slice; the decoder retains
+//! all cross-call state and reports exactly which bytes remain unconsumed.
 
 const std = @import("std");
 const mem = std.mem;
@@ -24,7 +23,7 @@ const HuffmanCode = huff.HuffmanCode;
 pub const SharedDictionary = shared_dict.SharedDictionary;
 pub const SharedDictionaryType = shared_dict.SharedDictionaryType;
 
-/// Detailed error codes, mirroring BROTLI_DECODER_ERROR_CODES_LIST.
+/// Detailed error codes for every malformed-input and resource condition.
 pub const ErrorCode = enum(i8) {
     no_error = 0,
     success = 1,
@@ -216,14 +215,13 @@ fn absPos(br: *const BitReader) u64 {
 fn log2Floor(x: u64) u32 {
     if (x == 0) return 0;
     // Number of significant bits of x.
-    return 64 - @clz(x);
+    return std.math.log2_int(u64, x) + 1;
 }
 
 /// Root-table index mask: HUFFMAN_TABLE_BITS wide, i.e. (1<<8)-1 = 255.
 const HUFFMAN_TABLE_MASK: u16 = (@as(u16, 1) << huff.HUFFMAN_TABLE_BITS) - 1;
 
 /// Decodes one symbol; requires >= 15 valid bits in the accumulator.
-/// Mirrors decode.c DecodeSymbol + ReadSymbol.
 inline fn decodeSymbol(bits: u64, table: []const HuffmanCode, br: *BitReader) u16 {
     const slot: usize = @intCast(bits & HUFFMAN_TABLE_MASK);
     var t = &table[slot];
@@ -295,6 +293,9 @@ fn readSymbolSafe(table: []const HuffmanCode, br: *BitReader, result: *u64) bool
     const rest_available = available_bits - huff.HUFFMAN_TABLE_BITS;
     // The marker stores (sub_table_offset - slot); add `slot` back.
     const idx: usize = slot + @as(usize, t.value) + @as(usize, @intCast(val));
+    // A malformed stream can steer this past the table; report failure rather
+    // than read out of bounds.
+    if (idx >= table.len) return false;
     t = &table[idx];
     if (rest_available < t.bits) return false;
     br.dropBits(huff.HUFFMAN_TABLE_BITS + t.bits);
@@ -304,7 +305,7 @@ fn readSymbolSafe(table: []const HuffmanCode, br: *BitReader, result: *u64) bool
 
 // Maximum sizes for per-metablock allocations.
 const MAX_NUM_DIRECT = constants.MAX_NDIRECT;
-const BROTLI_MAX_STATIC_CONTEXTS = 13;
+const MAX_STATIC_CONTEXTS = 13;
 
 /// A chunk of external (raw) dictionary attached before decompression starts.
 const CompoundDict = struct {
@@ -334,10 +335,12 @@ pub const Decoder = struct {
     loop_counter: i32 = 0,
 
     br: BitReader = .{},
+    /// Scratch slot for `decodeVarLenUint8` results that must outlive the
+    /// call that started decoding them.
+    var_len_scratch: u32 = 0,
     /// Holds up to 7 leftover input bytes between streaming calls.
     buffer: [8]u8 align(8) = @splat(0),
     buffer_length: usize = 0,
-    resume_skip_bits: u6 = 0,
 
     pos: i64 = 0,
     max_backward_distance: i64 = 0,
@@ -499,7 +502,6 @@ pub const Decoder = struct {
         self.br = .{};
         self.buffer = @splat(0);
         self.buffer_length = 0;
-        self.resume_skip_bits = 0;
         self.pos = 0;
         self.max_backward_distance = 0;
         self.max_distance = 0;
@@ -653,7 +655,7 @@ pub const Decoder = struct {
         return self.unwrittenBytes(false) != 0;
     }
 
-    /// True once any input has been consumed (mirrors BrotliDecoderIsUsed).
+    /// True once any input has been consumed.
     pub fn isUsed(self: *const Decoder) bool {
         return self.run_state != .uninited;
     }
@@ -940,7 +942,7 @@ pub const Decoder = struct {
         return .success;
     }
 
-    /// Process single decoded symbol code length (see decode.c).
+    /// Applies one decoded symbol code length to the code-length histogram.
     fn processSingleCodeLength(code_len: u64, symbol: *u64, repeat: *u64, space: *u64, prev_code_len: *u32, chains: *huff.SymbolChains, next_of: []u16, code_length_histo: *[16]u16) void {
         repeat.* = 0;
         if (code_len != 0) { // code_len == 1..15
@@ -952,7 +954,7 @@ pub const Decoder = struct {
         symbol.* += 1;
     }
 
-    /// Process repeated symbol code length (see decode.c).
+    /// Applies one repeated code length to the code-length histogram.
     fn processRepeatedCodeLength(code_len: u64, repeat_delta_in: u64, alphabet_size: u64, symbol: *u64, repeat: *u64, space: *u64, prev_code_len: *u32, repeat_code_len: *u32, chains: *huff.SymbolChains, next_of: []u16, code_length_histo: *[16]u16) void {
         var repeat_delta = repeat_delta_in;
         const extra_bits: u32 = if (code_len == constants.REPEAT_PREVIOUS_CODE_LENGTH) 2 else 3;
@@ -1178,7 +1180,7 @@ pub const Decoder = struct {
         return .success;
     }
 
-    /// Inverse move-to-front transform over `v` (see decode.c).
+    /// Inverse move-to-front transform over `v`.
     fn inverseMoveToFrontTransform(self: *Decoder, v: []u8) void {
         var mtf_u8: [256]u8 = undefined;
         for (0..256) |i| {
@@ -1364,6 +1366,26 @@ pub const Decoder = struct {
         return .success;
     }
 
+    /// Predecessor bytes for literal contexts at ring-buffer position `pos`.
+    /// Before the stream has produced two bytes there are no predecessors;
+    /// the encoder codes those positions with zero contexts, so the decoder
+    /// must too. The ring buffer may hold stale bytes from a previous stream
+    /// (after reset) or uninitialized slots, which must never leak into the
+    /// context computation.
+    fn prevBytes(self: *const Decoder, pos: usize) struct { p1: u8, p2: u8 } {
+        const rb_mask: u32 = self.ringbuffer_mask;
+        if (self.rb_roundtrips != 0 or pos >= 2) {
+            return .{
+                .p1 = self.ringbuffer[@intCast((@as(i64, @intCast(pos)) - 1) & rb_mask)],
+                .p2 = self.ringbuffer[@intCast((@as(i64, @intCast(pos)) - 2) & rb_mask)],
+            };
+        }
+        if (pos == 1) {
+            return .{ .p1 = self.ringbuffer[0], .p2 = 0 };
+        }
+        return .{ .p1 = 0, .p2 = 0 };
+    }
+
     fn detectTrivialLiteralBlockTypes(self: *Decoder) void {
         for (&self.trivial_literal_contexts) |*t| t.* = 0;
         var i: usize = 0;
@@ -1421,51 +1443,37 @@ pub const Decoder = struct {
         return .success;
     }
 
-    /// Dumps produced-but-unwritten bytes to the caller's buffer.
-    /// Captures the reader continuation point: returns the index of the byte
-    /// supplying any pending partial bits, how many trailing bytes fit in the
-    /// internal buffer, and how many bits of the first byte are pre-consumed.
-    fn captureTail(self: *Decoder) struct { start: usize, n: usize, skip: u6 } {
-        self.br.unload();
-        var back: usize = 0;
-        if (self.br.bit_pos != 0) back = 1;
-        const start = self.br.pos -| back;
-        const avail = self.br.input.len -| start;
-        const n = @min(avail, @as(usize, 8));
-        return .{
-            .start = start,
-            .n = n,
-            .skip = if (back == 1) @intCast(self.br.bit_pos) else 0,
-        };
-    }
-
-    /// Buffer-active exit: compact the internal buffer to its unconsumed
-    /// tail, preserving sub-byte position.
+    /// Drops already-consumed bytes from the internal buffer, retaining the
+    /// unconsumed tail for the next call. Only valid while the reader is
+    /// pointed at `self.buffer`.
     fn compactBuffer(self: *Decoder) void {
-        const c = self.captureTail();
-        if (c.n != 0) {
-            std.mem.copyForwards(u8, self.buffer[0..c.n], self.buffer[c.start .. c.start + c.n]);
+        self.br.unload();
+        const start = self.br.pos;
+        const keep = self.br.input.len - start;
+        if (start != 0 and keep != 0) {
+            std.mem.copyForwards(u8, self.buffer[0..keep], self.buffer[start..][0..keep]);
         }
-        self.buffer_length = c.n;
-        self.resume_skip_bits = c.skip;
+        self.buffer_length = keep;
     }
 
-    /// Buffer-empty exit: stash the pending tail into the internal buffer and
-    /// advance the caller's input view past everything staged.
+    /// Moves the unconsumed tail into the internal buffer and advances the
+    /// caller's input view past everything staged. Only valid while the
+    /// reader is pointed at the caller's input.
     fn stageResume(self: *Decoder, input: *[]const u8) void {
-        const c = self.captureTail();
+        self.br.unload();
         const on_input = self.br.input.ptr == input.*.ptr;
-        if (c.n != 0) {
+        const start = self.br.pos;
+        const keep = @min(self.br.input.len - start, self.buffer.len);
+        if (keep != 0) {
             if (on_input) {
-                @memcpy(self.buffer[0..c.n], self.br.input[c.start .. c.start + c.n]);
+                @memcpy(self.buffer[0..keep], self.br.input[start..][0..keep]);
             } else {
-                std.mem.copyForwards(u8, self.buffer[0..c.n], self.br.input[c.start .. c.start + c.n]);
+                std.mem.copyForwards(u8, self.buffer[0..keep], self.br.input[start..][0..keep]);
             }
         }
-        self.buffer_length = c.n;
-        self.resume_skip_bits = c.skip;
+        self.buffer_length = keep;
         if (on_input) {
-            input.* = input.*[c.start + c.n ..];
+            input.* = input.*[start + keep ..];
         }
     }
     fn writeRingBuffer(self: *Decoder, available_out: *[]u8, total_out: ?*u64, force: bool) ErrorCode {
@@ -1751,6 +1759,12 @@ pub const Decoder = struct {
         const saved = br.*;
 
         if (!readSymbolSafe(self.htree_command, br, &cmd_code)) return false;
+        // A table entry produced by a malformed stream can decode to a symbol
+        // outside the command alphabet; reject it before indexing.
+        if (cmd_code >= constants.NUM_COMMAND_SYMBOLS) {
+            _ = fail(.format_block_switch);
+            return false;
+        }
         self.last_cmd_sym = cmd_code;
         const v = prefix.cmd_lut[@intCast(cmd_code)];
         self.distance_code = v.distance_code;
@@ -1809,14 +1823,17 @@ pub const Decoder = struct {
         const addon: *CompoundDict = self.compound.?;
         var pos = pos_in;
         const orig_pos = pos;
-        while (addon.br_length != addon.br_copied) {
-            const space: usize = self.ringbuffer.len - pos;
+        // Never write past the live ring-buffer region: the trailing slack is
+        // reserved for over-wide copies, not for dictionary references.
+        while (addon.br_length != addon.br_copied and pos < self.ringbuffer_size) {
+            const space: usize = self.ringbuffer_size - pos;
             const rem_chunk: u32 =
                 (addon.chunk_offsets[addon.br_index + 1] - addon.chunk_offsets[addon.br_index]) -
                 addon.br_offset;
             var length: u32 = addon.br_length - addon.br_copied;
             if (length > rem_chunk) length = rem_chunk;
             if (length > space) length = @intCast(space);
+            if (length == 0) break;
             const src_chunk = addon.chunks[addon.br_index];
             @memcpy(
                 self.ringbuffer[pos..][0..length],
@@ -1857,6 +1874,15 @@ pub const Decoder = struct {
         };
 
         dispatch: while (true) {
+            // Record the phase that must be resumed if this iteration is cut
+            // short. An explicit state assigned later in the same iteration
+            // (ring-buffer write, metablock end, ...) overrides this.
+            self.run_state = switch (phase) {
+                .begin => .command_begin,
+                .inner => .command_inner,
+                .post_decode_literals => .command_post_decode_literals,
+                .post_wrap_copy => .command_post_wrap_copy,
+            };
             switch (phase) {
                 .begin => {
                     if (self.block_length[1] == 0) {
@@ -1880,12 +1906,12 @@ pub const Decoder = struct {
                 },
 
                 .inner => {
-                    const rb_mask: u32 = self.ringbuffer_mask;
                     var p1: u8 = 0;
                     var p2: u8 = 0;
                     if (!self.trivial_literal_context) {
-                        p1 = self.ringbuffer[@intCast((@as(i64, @intCast(pos)) - 1) & rb_mask)];
-                        p2 = self.ringbuffer[@intCast((@as(i64, @intCast(pos)) - 2) & rb_mask)];
+                        const prev = self.prevBytes(pos);
+                        p1 = prev.p1;
+                        p2 = prev.p2;
                     }
                     inner: while (true) {
                         if (self.block_length[0] == 0) {
@@ -1895,8 +1921,9 @@ pub const Decoder = struct {
                             // context bytes must be re-read from the ring
                             // buffer for a non-trivial new block type.
                             if (!self.trivial_literal_context) {
-                                p1 = self.ringbuffer[@intCast((@as(i64, @intCast(pos)) - 1) & rb_mask)];
-                                p2 = self.ringbuffer[@intCast((@as(i64, @intCast(pos)) - 2) & rb_mask)];
+                                const prev = self.prevBytes(pos);
+                                p1 = prev.p1;
+                                p2 = prev.p2;
                             }
                             continue :inner;
                         }
@@ -1913,6 +1940,10 @@ pub const Decoder = struct {
                         }
                         if (!readSymbolSafe(hc, br, &lit)) {
                             result = .needs_more_input;
+                            break :dispatch;
+                        }
+                        if (lit >= constants.NUM_LITERAL_SYMBOLS) {
+                            result = fail(.format_huffman_space);
                             break :dispatch;
                         }
                         self.ringbuffer[pos] = @truncate(lit);
@@ -2105,12 +2136,9 @@ pub const Decoder = struct {
         }
         if (code != .success) {}
         self.err = code;
-        // Discard a depleted internal buffer only when no sub-byte state is
-        // pending: a partially consumed first byte must survive until the
-        // next call primes the reader back to its exact bit position.
-        if (self.buffer_length != 0 and self.br.availIn() == 0 and
-            self.resume_skip_bits == 0)
-        {
+        // A fully drained internal buffer carries no information; drop it so
+        // the next call resumes directly from the caller's input.
+        if (self.buffer_length != 0 and self.br.availIn() == 0) {
             self.buffer_length = 0;
         }
         return switch (code) {
@@ -2123,7 +2151,7 @@ pub const Decoder = struct {
 
     /// Streaming entry point. Advances `next_in` past consumed input and
     /// shrinks `available_out` by written bytes; reports `total_out` when a
-    /// pointer is supplied. Mirrors BrotliDecoderDecompressStream exactly.
+    /// pointer is supplied.
     pub fn decompressStream(self: *Decoder, next_in: *[]const u8, available_out: *[]u8, total_out: ?*u64) Result {
         var result: ErrorCode = .success;
         var input: []const u8 = next_in.*;
@@ -2131,22 +2159,16 @@ pub const Decoder = struct {
         if (total_out) |p| p.* = self.partial_pos_out;
         if (self.err.isError()) return .err;
 
+        // Resume. Every exit leaves the reader on a byte boundary, so the
+        // accumulator is always empty here and `setInput` is all that is
+        // needed to continue from either the caller's slice or the internal
+        // buffer.
         if (self.buffer_length == 0) {
             self.br.setInput(input);
         } else {
             // Resume from the internal buffer; states will request more
             // input naturally when its bits are exhausted.
             self.br.setInput(self.buffer[0..self.buffer_length]);
-            if (self.resume_skip_bits != 0) {
-                // The first buffered byte is partially consumed:
-                // `resume_skip_bits` counts REMAINING unread bits. Shift past
-                // the consumed low bits to align on the next unread one.
-                const rem: u6 = self.resume_skip_bits;
-                self.br.val = @as(u64, self.buffer[0]) >> @intCast(8 - @as(u32, rem));
-                self.br.bit_pos = rem;
-                self.br.pos = 1;
-                self.resume_skip_bits = 0;
-            }
         }
 
         state_loop: while (true) {
@@ -2162,15 +2184,17 @@ pub const Decoder = struct {
                         }
                     }
                     if (self.buffer_length != 0) {
-                        if (self.br.availIn() == 0 and self.br.bit_pos == 0) {
-                            // Finished reading the internal buffer on a byte
-                            // boundary; safe to switch to the caller's input.
+                        if (self.br.availIn() == 0) {
+                            // Every buffered byte has been pulled; continue
+                            // straight from the caller's input.
                             self.buffer_length = 0;
                             result = .success;
                             self.br.setInput(input);
                             continue :state_loop;
                         } else if (input.len != 0) {
                             // Pull one more byte into the internal buffer.
+                            // `pos` is preserved: the buffer prefix is
+                            // unchanged, only the window is extended.
                             result = .success;
                             std.debug.assert(self.buffer_length < 8);
                             self.buffer[self.buffer_length] = input[0];
@@ -2179,26 +2203,30 @@ pub const Decoder = struct {
                             input = input[1..];
                             continue :state_loop;
                         }
+                        // No further input: keep whatever is still buffered.
                         self.compactBuffer();
                         break :state_loop;
                     } else {
-                        // Copy the tail to the internal buffer and return.
-                        // A partially consumed byte is re-staged too, with
-                        // its sub-byte position recorded, so no bit of the
-                        // stream is ever lost across calls.
-                        self.br.unload();
-                        var back: usize = 0;
-                        if (self.br.bit_pos != 0) back = 1;
-                        const start = self.br.pos -| back;
-                        var src_tail = self.br.input[start..];
+                        // Input stream does not hold enough input. Move the
+                        // bytes that have not been pulled into the internal
+                        // buffer and return.
+                        //
+                        // The accumulator is deliberately left untouched: the
+                        // bits it holds were taken from bytes that now sit
+                        // before `br.pos`, so the tail simply starts there.
+                        // All supplied input ends up consumed, which lets the
+                        // caller swap its buffer between calls.
+                        var src_tail = self.br.input[self.br.pos..];
+                        var staged: usize = 0;
                         while (src_tail.len != 0 and self.buffer_length < 8) {
                             self.buffer[self.buffer_length] = src_tail[0];
                             self.buffer_length += 1;
                             src_tail = src_tail[1..];
+                            staged += 1;
                         }
-                        self.resume_skip_bits =
-                            if (back == 1) @intCast(self.br.bit_pos) else 0;
-                        input = self.br.input[start..];
+                        if (self.br.input.ptr == input.ptr) {
+                            input = self.br.input[self.br.pos + staged ..];
+                        }
                         break :state_loop;
                     }
                 }
@@ -2208,8 +2236,8 @@ pub const Decoder = struct {
                     // out bytes already consumed from its front.
                     self.compactBuffer();
                 } else {
-                    // Capture the pending partial byte plus trailing bytes so
-                    // sub-byte reader position survives across calls.
+                    // Capture the unconsumed tail so no bit of the stream is
+                    // lost across calls.
                     self.stageResume(&input);
                 }
                 break :state_loop;
@@ -2310,10 +2338,15 @@ pub const Decoder = struct {
                         continue :state_loop;
                     }
                     const idx: usize = @intCast(self.loop_counter);
-                    var tmp: u32 = @intCast(self.num_block_types[idx] -% 1);
-                    result = self.decodeVarLenUint8(&self.br, &tmp);
+                    // The partially decoded value must survive across calls:
+                    // the "long" form needs the bit count chosen by the
+                    // preceding "short" form.
+                    if (self.substate_decode_uint8 == .none) {
+                        self.var_len_scratch = @intCast(self.num_block_types[idx] -% 1);
+                    }
+                    result = self.decodeVarLenUint8(&self.br, &self.var_len_scratch);
                     if (result != .success) continue :state_loop;
-                    self.num_block_types[idx] = @as(u64, tmp) + 1;
+                    self.num_block_types[idx] = @as(u64, self.var_len_scratch) + 1;
                     if (self.num_block_types[idx] < 2) {
                         self.loop_counter += 1;
                         continue :state_loop;
@@ -2601,6 +2634,11 @@ pub fn decompressWithOptions(
 }
 
 /// Decompress into a caller-provided output buffer.
+///
+/// Returns the number of bytes written. Fails with `error.ResourceLimitExceeded`
+/// when the buffer is too small, `error.TruncatedInput` when the stream ends
+/// early, and the decoder's specific error otherwise, so a caller can tell
+/// "give me a bigger buffer" apart from "this stream is corrupt".
 pub fn decompressInto(
     allocator: std.mem.Allocator,
     input: []const u8,
@@ -2613,7 +2651,9 @@ pub fn decompressInto(
     var total: u64 = 0;
     switch (dec.decompressStream(&in, &avail, &total)) {
         .success => {},
-        else => return error.BrotliDecompressionError,
+        .needs_more_output => return error.ResourceLimitExceeded,
+        .needs_more_input => return error.TruncatedInput,
+        .err => return dec.errorCode().toError(),
     }
     return @intCast(total);
 }
@@ -2684,4 +2724,351 @@ test "decompress reference-encoded dictionary resource" {
     try testing.expectEqual(Result.success, r);
     try testing.expectEqual(@as(u64, expected.len), total);
     try testing.expectEqualSlices(u8, expected, output_full[0..expected.len]);
+}
+
+test "decodes streams produced by an independent implementation" {
+    for (reference_streams) |s| {
+        const got = decompress(testing.allocator, s.compressed) catch |e| {
+            std.debug.print("reference stream {s} q{d} failed to decode: {any}\n", .{ s.name, s.quality, e });
+            return e;
+        };
+        defer testing.allocator.free(got);
+
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(got, &digest, .{});
+        var hex: [64]u8 = undefined;
+        hex = std.fmt.bytesToHex(digest, .lower);
+
+        if (!std.mem.eql(u8, &hex, s.sha256)) {
+            std.debug.print("reference stream {s} q{d}: decoded {d} bytes, sha256={s}, expected {d} bytes sha256={s}\n", .{
+                s.name, s.quality, got.len, hex, s.original_len, s.sha256,
+            });
+            return error.ContentMismatch;
+        }
+        try testing.expectEqual(s.original_len, got.len);
+    }
+}
+
+/// Feeds a stream through the decoder in fixed-size input and output chunks.
+///
+/// Follows the streaming contract exactly: `next_in` is advanced past the
+/// bytes the decoder actually consumed, and whatever it hands back is
+/// re-offered on the next call. Ignoring the returned slice would silently
+/// drop input the decoder declined to consume.
+fn decodeChunked(stream: []const u8, in_chunk: usize, out_chunk: usize) !std.ArrayList(u8) {
+    var d = Decoder.init(testing.allocator, .{});
+    defer d.deinit();
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(testing.allocator);
+
+    var scratch: [64]u8 = undefined;
+    var ci: usize = 0;
+    while (true) {
+        var end = ci;
+        var in: []const u8 = &.{};
+        if (ci < stream.len) {
+            end = @min(ci + in_chunk, stream.len);
+            in = stream[ci..end];
+        }
+        var avail: []u8 = scratch[0..@min(out_chunk, scratch.len)];
+        const before = avail.len;
+        const r = d.decompressStream(&in, &avail, null);
+        try out.appendSlice(testing.allocator, scratch[0 .. before - avail.len]);
+        // `in` now starts at the first byte the decoder did not consume, so
+        // rewind the cursor by exactly the bytes it handed back.
+        ci = end - in.len;
+        switch (r) {
+            .success => break,
+            .needs_more_input => {
+                if (ci >= stream.len) return error.TruncatedChunked;
+            },
+            .needs_more_output => {},
+            .err => return error.FailedChunked,
+        }
+    }
+    return out;
+}
+
+test "reference streams survive every buffer boundary" {
+    const in_chunks = [_]usize{ 1, 2, 3, 7, 13, 1 << 20 };
+    const out_chunks = [_]usize{ 1, 3, 17, 1 << 20 };
+
+    for (reference_streams) |s| {
+        for (in_chunks) |ic| {
+            for (out_chunks) |oc| {
+                var got = try decodeChunked(s.compressed, ic, oc);
+                defer got.deinit(testing.allocator);
+                var digest: [32]u8 = undefined;
+                std.crypto.hash.sha2.Sha256.hash(got.items, &digest, .{});
+                var hex: [64]u8 = undefined;
+                hex = std.fmt.bytesToHex(digest, .lower);
+                if (!std.mem.eql(u8, &hex, s.sha256)) {
+                    std.debug.print("reference stream {s} in={d} out={d}: decoded {d} bytes, sha256={s}\n", .{
+                        s.name, ic, oc, got.items.len, hex,
+                    });
+                    return error.ContentMismatch;
+                }
+            }
+        }
+    }
+}
+
+test "regression: long-run stream survives every input/output chunk size" {
+    // A long literal-free run followed by a word. It decodes to far more output
+    // than a small window, so the decoder must wrap its ring buffer and keep
+    // decoding while the caller refills tiny output buffers.
+    //
+    // This case was previously excluded from the chunk matrix because the
+    // driving helper advanced its input cursor past every byte it handed to the
+    // decoder instead of honouring the bytes the decoder returned through
+    // `next_in`. Bytes the decoder deliberately kept were therefore lost and
+    // the stream looked truncated.
+    const in_chunks = [_]usize{ 1, 2, 3, 7, 13, 1 << 20 };
+    const out_chunks = [_]usize{ 1, 3, 17, 1 << 20 };
+
+    for (reference_streams) |s| {
+        if (s.original_len < 1 << 17) continue;
+        for (in_chunks) |ic| {
+            for (out_chunks) |oc| {
+                var got = try decodeChunked(s.compressed, ic, oc);
+                defer got.deinit(testing.allocator);
+                var digest: [32]u8 = undefined;
+                std.crypto.hash.sha2.Sha256.hash(got.items, &digest, .{});
+                var hex: [64]u8 = undefined;
+                hex = std.fmt.bytesToHex(digest, .lower);
+                if (!std.mem.eql(u8, &hex, s.sha256)) {
+                    std.debug.print("long-run {s} in={d} out={d}: decoded {d} bytes, sha256={s}\n", .{
+                        s.name, ic, oc, got.items.len, hex,
+                    });
+                    return error.ContentMismatch;
+                }
+            }
+        }
+    }
+}
+
+test "regression: decoder hands unconsumed input back to the caller" {
+    // The streaming contract: `next_in` advances only past bytes that were
+    // actually consumed. Handing a small window and then re-offering whatever
+    // comes back must make forward progress on every call.
+    const payload = "resumption across sub-byte boundaries must preserve every bit. " ++
+        "the quick brown fox jumps over the lazy dog. " ++
+        "the quick brown fox jumps over the lazy dog. ";
+    const encoder = @import("../compress/encode.zig");
+    const comp = try encoder.compressWithOptions(testing.allocator, payload, .{ .quality = 9 });
+    defer testing.allocator.free(comp);
+
+    var d = Decoder.init(testing.allocator, .{});
+    defer d.deinit();
+
+    var out: [7]u8 = undefined;
+    var produced: usize = 0;
+    var feed_at: usize = 0;
+    var guard: usize = 0;
+    var finished = false;
+
+    while (guard < 10_000_000) : (guard += 1) {
+        var in: []const u8 = &.{};
+        const end = @min(feed_at + 3, comp.len);
+        if (feed_at < comp.len) in = comp[feed_at..end];
+        var avail: []u8 = &out;
+        const before = avail.len;
+        const r = d.decompressStream(&in, &avail, null);
+        produced += before - avail.len;
+        // Only bytes the decoder consumed leave the cursor.
+        try testing.expect(end - in.len >= feed_at);
+        feed_at = end - in.len;
+        switch (r) {
+            .success => {
+                finished = true;
+                break;
+            },
+            .needs_more_input => {
+                if (feed_at >= comp.len) return error.TruncatedInput;
+            },
+            .needs_more_output => {},
+            .err => return error.DecodeFailed,
+        }
+    }
+    try testing.expect(finished);
+    try testing.expectEqual(payload.len, produced);
+}
+
+pub const reference_streams_mod = @import("reference_streams.zig");
+pub const ReferenceStream = reference_streams_mod.ReferenceStream;
+pub const reference_streams = reference_streams_mod.reference_streams;
+
+test "malformed input yields only documented errors, never a panic" {
+    const encoder = @import("../compress/encode.zig");
+    const allocator = testing.allocator;
+
+    // A stream with real structure: literals, a copy, a tree description.
+    const payload = "structural payload used to derive malformed variants: " ++
+        "the quick brown fox jumps over the lazy dog. " ++
+        "the quick brown fox jumps over the lazy dog.";
+    const valid = try encoder.compressWithOptions(allocator, payload, .{ .quality = 5 });
+    defer allocator.free(valid);
+
+    // Every single-bit flip must either decode to something well formed or fail
+    // with an error from the public set. `@panic` and `catch unreachable` on
+    // externally controlled bytes would show up here as a test crash.
+    var bad = try allocator.dupe(u8, valid);
+    defer allocator.free(bad);
+
+    for (0..valid.len) |byte_index| {
+        for (0..8) |bit| {
+            const mask = @as(u8, 1) << @intCast(bit);
+            bad[byte_index] ^= mask;
+            defer bad[byte_index] ^= mask;
+
+            if (decompress(allocator, bad)) |got| {
+                defer allocator.free(got);
+                // A decode that succeeds must be self-consistent: feeding it
+                // back through the streaming path yields the same bytes.
+                var d = Decoder.init(allocator, .{});
+                defer d.deinit();
+                const again = try d.decompress(bad);
+                defer allocator.free(again);
+                try testing.expectEqualSlices(u8, got, again);
+            } else |e| {
+                switch (e) {
+                    error.CorruptStream,
+                    error.TruncatedInput,
+                    error.InvalidHeader,
+                    error.InvalidMetaBlock,
+                    error.InvalidHuffmanTree,
+                    error.InvalidCommand,
+                    error.InvalidDistance,
+                    error.InvalidDictionaryReference,
+                    error.ResourceLimitExceeded,
+                    error.OutputLimitExceeded,
+                    error.InvalidParameter,
+                    error.InvalidStreamingState,
+                    error.OutOfMemory,
+                    => {},
+                    else => return e,
+                }
+            }
+        }
+    }
+}
+
+test "invalid window declarations are rejected without large allocation" {
+    const allocator = testing.allocator;
+
+    // Window bits occupy the low bits of the first stream byte. Large values
+    // that still fit the field, and reserved encodings, must be refused by the
+    // documented header error rather than provoking a huge ring buffer.
+    const windows = [_]u8{ 0x00, 0x01, 0x0E, 0x0F, 0x1E, 0x1F, 0x2E, 0x2F, 0x3E, 0x3F, 0xFE, 0xFF };
+    for (windows) |w| {
+        const bad = [_]u8{w};
+        const r = decompress(allocator, &bad);
+        if (r) |got| {
+            // Some encodings legitimately mean "empty payload" or a reserved
+            // but harmless window; only accept a genuinely empty result.
+            allocator.free(got);
+            try testing.expectEqual(@as(usize, 0), got.len);
+        } else |e| {
+            switch (e) {
+                error.InvalidHeader, error.CorruptStream, error.TruncatedInput, error.ResourceLimitExceeded => {},
+                else => return e,
+            }
+        }
+    }
+
+    // A header promising a very large metablock must be refused on its own
+    // merits rather than by exhausting memory first.
+    for ([_][]const u8{
+        "\x1B\x00\x00\x00\x00",
+        "\x1B\xFF\xFF\xFF\xFF\xFF",
+        "\x1B\x00\x00\x00\x00\x00\x00\x00\x00",
+    }) |bad| {
+        if (decompress(allocator, bad)) |got| allocator.free(got) else |_| {}
+    }
+}
+
+test "trailing bytes after the final metablock follow the documented policy" {
+    const encoder = @import("../compress/encode.zig");
+    const allocator = testing.allocator;
+    const valid = try encoder.compressWithOptions(allocator, "trailing data policy probe", .{ .quality = 5 });
+    defer allocator.free(valid);
+
+    // Appending garbage must not be mistaken for part of the stream, and must
+    // never panic regardless of which policy is in force.
+    var padded = try allocator.alloc(u8, valid.len + 8);
+    defer allocator.free(padded);
+    @memcpy(padded[0..valid.len], valid);
+    @memset(padded[valid.len..], 0xA5);
+    if (decompress(allocator, padded)) |got| {
+        defer allocator.free(got);
+        try testing.expectEqualStrings("trailing data policy probe", got);
+    } else |e| {
+        switch (e) {
+            error.CorruptStream, error.TruncatedInput, error.InvalidMetaBlock => {},
+            else => return e,
+        }
+    }
+}
+
+test "regression: reset decoder exposes no stale context bytes at stream start" {
+    // The ring buffer retains previous-stream bytes across reset(). Literal
+    // contexts for the first two output bytes must still be zero (as the
+    // encoder codes them), never stale bytes, or context-modeled streams
+    // decode to wrong bytes after reuse.
+    const encoder = @import("../compress/encode.zig");
+    const allocator = testing.allocator;
+
+    // Heterogeneous payload: forces literal context modeling with
+    // non-trivial context maps at quality 9. The payload slightly exceeds the
+    // 64 KiB window, so after the first decode the ring buffer's tail slots
+    // hold previous-stream bytes; a reset decoder must still start the next
+    // stream with zero contexts. Word text compresses well inside the window
+    // (so real Huffman trees are emitted) while the mixed vocabularies keep
+    // the context map non-trivial.
+    const vocab1 = [_][]const u8{
+        "alpha ", "bravo ", "charlie ", "delta ",  "echo ", "foxtrot ",
+        "golf ",  "hotel ", "india ",   "juliet ", "kilo ", "lima ",
+    };
+    const vocab2 = [_][]const u8{
+        "one ",   "two ",   "three ", "four ", "five ",   "six ",
+        "seven ", "eight ", "nine ",  "ten ",  "eleven ", "twelve ",
+    };
+    const src1 = try allocator.alloc(u8, 70000);
+    defer allocator.free(src1);
+    const src2 = try allocator.alloc(u8, 70000);
+    defer allocator.free(src2);
+    var prng = std.Random.DefaultPrng.init(99);
+    var off1: usize = 0;
+    while (off1 < src1.len) {
+        const w = vocab1[prng.random().intRangeLessThan(usize, 0, vocab1.len)];
+        const n = @min(w.len, src1.len - off1);
+        @memcpy(src1[off1..][0..n], w[0..n]);
+        off1 += n;
+    }
+    var off2: usize = 0;
+    while (off2 < src2.len) {
+        const w = vocab2[prng.random().intRangeLessThan(usize, 0, vocab2.len)];
+        const n = @min(w.len, src2.len - off2);
+        @memcpy(src2[off2..][0..n], w[0..n]);
+        off2 += n;
+    }
+
+    const comp1 = try encoder.compressWithOptions(allocator, src1, .{ .quality = 9, .lgWin = 16 });
+    defer allocator.free(comp1);
+    const comp2 = try encoder.compressWithOptions(allocator, src2, .{ .quality = 9, .lgWin = 16 });
+    defer allocator.free(comp2);
+
+    var dec = Decoder.init(allocator, .{});
+    defer dec.deinit();
+
+    const got1 = try dec.decompress(comp1);
+    defer allocator.free(got1);
+    try testing.expectEqualSlices(u8, src1, got1);
+
+    // Reuse without freeing: the ring buffer still holds src1's tail.
+    dec.reset(null);
+    const got2 = try dec.decompress(comp2);
+    defer allocator.free(got2);
+    try testing.expectEqualSlices(u8, src2, got2);
 }

@@ -11,6 +11,48 @@ description: Incremental streaming Brotli decompressor supporting std.Io pipelin
 2. **Chunked Memory Feed/Take**: Arbitrary byte-boundary feeding (`feed()`, `endInput()`) and decoding into fixed buffers (`take()`).
 
 Defined in `src/streaming/decompressor.zig` and re-exported by `src/brotli.zig`.
+## Low-level contract
+
+`Decoder.decompressStream` is the primitive that `StreamingDecompressor` and
+`decompressStream` build on. Three rules govern its use:
+
+- **`next_in` advances only past bytes that were consumed.** Whatever it points
+  at when the call returns still belongs to the caller and must be re-offered
+  on the next call. Advancing your own cursor past every byte you handed in,
+  instead of past what the decoder returned, silently drops input and makes a
+  complete stream look truncated.
+- **`.needs_more_output`** means the decoder stopped only because the
+  destination buffer filled up. Resume with more room; the output continues
+  exactly where it left off.
+- **`.needs_more_input`** means the decoder could not proceed with the bytes it
+  holds. Supply more input; it resumes at the same stage of the stream
+  (metablock header, Huffman table, context map, literal run or distance).
+
+A minimal correct driver:
+
+```zig
+var pos: usize = 0; // next byte you will offer
+while (true) {
+    var end = pos;
+    var in: []const u8 = &.{};
+    if (pos < comp.len) {
+        end = @min(pos + chunk, comp.len);
+        in = comp[pos..end];
+    }
+    var out: [out_capacity]u8 = undefined;
+    var avail: []u8 = &out;
+    switch (dec.decompressStream(&in, &avail, null)) {
+        .success => break,
+        .needs_more_input => if (pos >= comp.len) return error.TruncatedInput,
+        .needs_more_output => {},
+        .err => return error.CorruptStream,
+    }
+    // Rewind by exactly what the decoder handed back.
+    pos = end - in.len;
+}
+```
+
+`StreamingDecompressor.take()` applies this rule for you.
 
 ## Initialization & Lifecycle
 

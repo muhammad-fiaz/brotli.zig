@@ -19,16 +19,16 @@ const HALF = 256;
 
 /// Returns the combined 512-entry LUT for `mode`: entries [0..255] map the
 /// last byte and [256..511] map the second-last byte.
-pub fn contextLut(mode: ContextType) []const u8 {
+pub inline fn contextLut(mode: ContextType) *const [512]u8 {
     const base: usize = @as(usize, @backingInt(mode)) << 9;
-    return tables.table[base .. base + 512];
+    return tables.table[base..][0..512];
 }
 
-/// BROTLI_CONTEXT(P1, P2, LUT): computes the literal context id from the
-/// previous two bytes using the combined 512-entry LUT.
+/// Computes the literal context id from the previous two bytes using the
+/// combined 512-entry LUT.
 pub inline fn contextId(p1: u8, p2: u8, mode: ContextType) u8 {
-    const lut = contextLut(mode);
-    return lut[p1] | lut[256 + @as(usize, p2)];
+    const base: usize = @as(usize, @backingInt(mode)) << 9;
+    return tables.table[base + p1] | tables.table[base + 256 + p2];
 }
 
 test "context ids are within range" {
