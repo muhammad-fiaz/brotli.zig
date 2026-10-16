@@ -248,10 +248,7 @@ pub fn storeVarLenUint8(n: usize, storage_ix: *usize, storage: []u8) void {
 
 pub fn moveToFrontTransform(v_in: []const u32, v_out: []u32) void {
     if (v_in.len == 0) return;
-    var max_val: u32 = v_in[0];
-    for (v_in[1..]) |val| {
-        if (val > max_val) max_val = val;
-    }
+    const max_val = std.mem.max(u32, v_in);
     var mtf: [256]u8 = undefined;
     for (0..max_val + 1) |i| {
         mtf[i] = @intCast(i);
@@ -259,13 +256,10 @@ pub fn moveToFrontTransform(v_in: []const u32, v_out: []u32) void {
     const mtf_size = max_val + 1;
     for (v_in, 0..) |val, idx| {
         const target: u8 = @intCast(val);
-        var item_idx: usize = 0;
-        while (item_idx < mtf_size and mtf[item_idx] != target) : (item_idx += 1) {}
+        const item_idx = std.mem.indexOfScalar(u8, mtf[0..mtf_size], target) orelse mtf_size;
         v_out[idx] = @intCast(item_idx);
-        // Move to front
-        var j = item_idx;
-        while (j > 0) : (j -= 1) {
-            mtf[j] = mtf[j - 1];
+        if (item_idx > 0) {
+            std.mem.copyBackwards(u8, mtf[1 .. item_idx + 1], mtf[0..item_idx]);
         }
         mtf[0] = target;
     }

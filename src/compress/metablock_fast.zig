@@ -45,8 +45,8 @@ pub const MetablockArena = struct {
 };
 
 pub fn brotliEncodeMlen(length: usize, bits: *u64, numbits: *usize, nibblesbits: *u64) void {
-    const lg: usize = if (length == 1) 1 else fast_log.log2FloorNonZero(@intCast(length - 1)) + 1;
-    const mnibbles: usize = (if (lg < 16) 16 else (lg + 3)) / 4;
+    const lg: usize = std.math.log2_int_ceil(usize, @max(2, length));
+    const mnibbles: usize = @max(16, lg + 3) / 4;
     nibblesbits.* = mnibbles - 4;
     numbits.* = mnibbles * 4;
     bits.* = length - 1;

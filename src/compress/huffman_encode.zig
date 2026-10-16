@@ -31,16 +31,11 @@ pub const BitSink = struct {
     }
 };
 
-fn log2Floor(x: u64) u6 {
-    if (x == 0) return 0;
-    return std.math.log2_int(u64, x);
-}
-
 /// Width in bits used to store one raw symbol of an alphabet of size
 /// `alphabet_size_max`.
 pub fn alphabetBits(alphabet_size_max: u32) u6 {
     if (alphabet_size_max <= 1) return 1;
-    return @as(u6, log2Floor(alphabet_size_max - 1)) + 1;
+    return @as(u6, @intCast(std.math.log2_int_ceil(u32, alphabet_size_max)));
 }
 
 const EMPTY: u16 = 0xFFFF;
@@ -156,8 +151,7 @@ fn exchangeLengths(freqs: []const u32, max_depth: u8, depths: []u8) void {
     };
     std.mem.sort(u16, order[0..m], SortCtx{ .freqs = freqs }, SortCtx.lessThan);
 
-    var k: u6 = 0;
-    while ((@as(usize, 1) << @as(u5, @intCast(k))) < m) k += 1;
+    const k: u6 = @intCast(std.math.log2_int_ceil(usize, @max(1, m)));
     // k = ceil(log2(m)); complete tree: x leaves at depth k-1, y at depth k.
     const kk: usize = k;
     const x: usize = (@as(usize, 1) << @intCast(kk)) - m;
@@ -200,17 +194,20 @@ fn kraftSum(depths: []const u8, max_depth: u8) u64 {
 /// transmission order: the bit sink emits LSB-first while prefix codes are
 /// matched most-significant-bit first, so stored codes are bit-reversed.
 pub fn assignCanonicalCodes(depths: []const u8, codes: []u16) void {
+    var bl_count: [MAX_CODE_LENGTH + 1]u32 = @splat(0);
+    for (depths) |d| {
+        if (d <= MAX_CODE_LENGTH) {
+            bl_count[d] += 1;
+        }
+    }
+
     var next: [MAX_CODE_LENGTH + 2]u32 = undefined;
     var code: u32 = 0;
-    var l: usize = 1;
-    while (l <= MAX_CODE_LENGTH) : (l += 1) {
+    for (1..MAX_CODE_LENGTH + 1) |l| {
         next[l] = code;
-        var cnt: u32 = 0;
-        for (depths) |d| {
-            if (d == l) cnt += 1;
-        }
-        code = (code + cnt) << 1;
+        code = (code + bl_count[l]) << 1;
     }
+
     for (depths, 0..) |d, sym| {
         if (d == 0) {
             codes[sym] = 0;

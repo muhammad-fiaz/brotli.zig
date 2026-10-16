@@ -148,10 +148,10 @@ pub fn transformDictionaryWord(
         wi += skip;
         wlen -= @intCast(skip);
     }
-    var i: usize = 0;
-    while (i < wlen) : (i += 1) {
-        dst[idx] = word[wi + i];
-        idx += 1;
+    if (wlen > 0) {
+        const copy_len: usize = @intCast(wlen);
+        @memcpy(dst[idx .. idx + copy_len], word[wi .. wi + copy_len]);
+        idx += copy_len;
     }
     // In-place post-processing of the copied word.
     const start = idx - @as(usize, @intCast(@max(wlen, 0)));

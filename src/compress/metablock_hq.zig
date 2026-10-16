@@ -96,16 +96,7 @@ pub fn brotliPopulationCost(comptime alphabet_size: usize, histo: *const Histogr
             histo.data_[s[2]],
             histo.data_[s[3]],
         };
-        for (0..4) |i| {
-            var j = i + 1;
-            while (j < 4) : (j += 1) {
-                if (h[j] > h[i]) {
-                    const tmp = h[i];
-                    h[i] = h[j];
-                    h[j] = tmp;
-                }
-            }
-        }
+        std.mem.sort(u32, &h, {}, std.sort.desc(u32));
         const h23 = h[2] + h[3];
         const hmax = @max(h23, h[0]);
         return kFourSymbolHistogramCost + @as(f64, @floatFromInt(3 * h23 + 2 * (h[0] + h[1]) - hmax));
