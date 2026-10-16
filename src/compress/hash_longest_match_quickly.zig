@@ -100,7 +100,7 @@ pub inline fn prefixEncodeCopyDistance(
         const nbits = bucket - postfix_bits;
         code.* = @intCast((nbits << 10) |
             (16 + num_direct_codes +
-            ((2 * (nbits - 1) + prefix) << @intCast(postfix_bits)) + postfix));
+                ((2 * (nbits - 1) + prefix) << @intCast(postfix_bits)) + postfix));
         extra_bits.* = @intCast((dist - offset) >> @intCast(postfix_bits));
     }
 }

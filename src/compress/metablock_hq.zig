@@ -1445,7 +1445,7 @@ pub fn storeMetaBlockHQ(
 
     // Context mode: for each literal block type
     for (0..mb.literal_split.num_types) |_| {
-        bit_writer.writeBits(2, @intFromEnum(literal_context_mode), storage_ix, storage);
+        bit_writer.writeBits(2, @backingInt(literal_context_mode), storage_ix, storage);
     }
 
     // Literal context map

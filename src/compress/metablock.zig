@@ -949,7 +949,7 @@ pub fn storeMetaBlockGreedy(
         for (0..arena.lit_split.num_types) |t_idx| {
             const offset: u32 = @intCast(t_idx * num_literal_contexts);
             for (0..64) |c_idx| {
-                full_lit_context_map.?[ (t_idx << 6) + c_idx] = offset + literal_context_map.?[c_idx];
+                full_lit_context_map.?[(t_idx << 6) + c_idx] = offset + literal_context_map.?[c_idx];
             }
         }
         try encodeContextMap(allocator, full_lit_context_map.?, total_lit_histograms, tree, storage_ix, storage);

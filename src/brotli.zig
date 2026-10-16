@@ -1054,8 +1054,6 @@ test "exact byte parity on deterministic fixtures" {
     }
 }
 
-
-
 test "multi-threaded concurrent compression and decompression" {
     const worker = struct {
         fn run(allocator: std.mem.Allocator, id: usize) !void {
