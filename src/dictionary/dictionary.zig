@@ -17,23 +17,40 @@ pub const size_bits_by_length = [32]u8{
     5,  0,  0,  0,  0,  0,  0,  0,
 };
 
-/// Byte offset of the first word of each length.
-pub const offsets_by_length = [32]u32{
-    0,      0,      0,      0,      0,      4096,   9216,   21504,
-    35840,  44032,  53248,  63488,  74752,  87040,  93696,  100864,
-    104704, 106752, 108928, 113536, 115968, 118528, 119872, 121280,
-    122016, 122784, 122784, 122784, 122784, 122784, 122784, 122784,
-};
-
 /// Minimum/maximum dictionary word lengths that have words.
 pub const min_word_length = 4;
 pub const max_word_length = 24;
 
+/// Precomputed number of words of each length (1 << size_bits_by_length).
+pub const words_count_by_length: [32]u32 = blk: {
+    var counts: [32]u32 = @splat(0);
+    for (0..32) |len| {
+        const bits = size_bits_by_length[len];
+        if (bits != 0) {
+            counts[len] = @as(u32, 1) << @intCast(bits);
+        }
+    }
+    break :blk counts;
+};
+
+/// Byte offset of the first word of each length (derived from word sizes at compile time).
+pub const offsets_by_length: [32]u32 = blk: {
+    var offs: [32]u32 = @splat(0);
+    var cur: u32 = 0;
+    for (0..32) |len| {
+        offs[len] = cur;
+        const bits = size_bits_by_length[len];
+        if (bits != 0) {
+            cur += @as(u32, @intCast(len)) * (@as(u32, 1) << @intCast(bits));
+        }
+    }
+    break :blk offs;
+};
+
 /// Number of words of the given length (0 when none).
-pub fn numWordsByLength(len: u32) u32 {
-    const bits = size_bits_by_length[len];
-    if (bits == 0) return 0;
-    return @as(u32, 1) << @intCast(bits);
+pub inline fn numWordsByLength(len: u32) u32 {
+    if (len >= 32) return 0;
+    return words_count_by_length[len];
 }
 
 test "dictionary data has the exact RFC 7932 size" {

@@ -2,34 +2,26 @@
 
 pub const PrefixCodeRange = struct { offset: u16, nbits: u8 };
 
-pub const prefix_code_ranges = [26]PrefixCodeRange{
-    .{ .offset = 1, .nbits = 2 },
-    .{ .offset = 5, .nbits = 2 },
-    .{ .offset = 9, .nbits = 2 },
-    .{ .offset = 13, .nbits = 2 },
-    .{ .offset = 17, .nbits = 3 },
-    .{ .offset = 25, .nbits = 3 },
-    .{ .offset = 33, .nbits = 3 },
-    .{ .offset = 41, .nbits = 3 },
-    .{ .offset = 49, .nbits = 4 },
-    .{ .offset = 65, .nbits = 4 },
-    .{ .offset = 81, .nbits = 4 },
-    .{ .offset = 97, .nbits = 4 },
-    .{ .offset = 113, .nbits = 5 },
-    .{ .offset = 145, .nbits = 5 },
-    .{ .offset = 177, .nbits = 5 },
-    .{ .offset = 209, .nbits = 5 },
-    .{ .offset = 241, .nbits = 6 },
-    .{ .offset = 305, .nbits = 6 },
-    .{ .offset = 369, .nbits = 7 },
-    .{ .offset = 497, .nbits = 8 },
-    .{ .offset = 753, .nbits = 9 },
-    .{ .offset = 1265, .nbits = 10 },
-    .{ .offset = 2289, .nbits = 11 },
-    .{ .offset = 4337, .nbits = 12 },
-    .{ .offset = 8433, .nbits = 13 },
-    .{ .offset = 16625, .nbits = 24 },
+pub const prefix_code_ranges: [26]PrefixCodeRange = blk: {
+    const nbits_table = [26]u8{
+        2, 2, 2, 2, 3, 3,  3,  3,  4,  4,  4, 4, 5, 5, 5, 5,
+        6, 6, 7, 8, 9, 10, 11, 12, 13, 24,
+    };
+    var ranges: [26]PrefixCodeRange = undefined;
+    var offset: u32 = 1;
+    for (0..26) |i| {
+        ranges[i] = .{ .offset = @intCast(offset), .nbits = nbits_table[i] };
+        offset += @as(u32, 1) << @intCast(nbits_table[i]);
+    }
+    break :blk ranges;
 };
+
+/// Fast search for the block length prefix code (0..25) matching `len`.
+pub inline fn findPrefixCode(len: u32) u8 {
+    var code: u32 = if (len >= 177) (if (len >= 753) 20 else 14) else (if (len >= 41) 7 else 0);
+    while (code < 25 and len >= prefix_code_ranges[code + 1].offset) : (code += 1) {}
+    return @intCast(code);
+}
 
 const std = @import("std");
 

@@ -222,10 +222,8 @@ pub const BlockSplitCode = struct {
     length_bits: [26]u16 = @splat(0),
 };
 
-pub fn blockLengthPrefixCode(len: u32) u32 {
-    var code: u32 = if (len >= 177) (if (len >= 753) 20 else 14) else (if (len >= 41) 7 else 0);
-    while (code < (26 - 1) and len >= prefix_ranges.prefix_code_ranges[code + 1].offset) : (code += 1) {}
-    return code;
+pub inline fn blockLengthPrefixCode(len: u32) u32 {
+    return prefix_ranges.findPrefixCode(len);
 }
 
 pub fn getBlockLengthPrefixCode(len: u32, code: *usize, n_extra: *u32, extra: *u32) void {

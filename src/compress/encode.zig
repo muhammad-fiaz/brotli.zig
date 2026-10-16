@@ -331,16 +331,7 @@ const CtxPlan = struct {
 pub const LitRun = struct { off: u32, len: u32 };
 /// Block-length prefix code lookup over the format's range table.
 fn blockLengthPrefixCode(len: u32) u8 {
-    var code: u8 = if (len >= 177)
-        (if (len >= 753) @as(u8, 20) else @as(u8, 14))
-    else
-        (if (len >= 41) @as(u8, 7) else @as(u8, 0));
-    while (code < constants.NUM_BLOCK_LEN_SYMBOLS - 1 and
-        len >= prefix_ranges.prefix_code_ranges[code + 1].offset)
-    {
-        code += 1;
-    }
-    return code;
+    return prefix_ranges.findPrefixCode(len);
 }
 /// Block-type switch code calculator mirroring the format's ring of the two
 /// most recent block types.
