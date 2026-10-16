@@ -127,74 +127,36 @@ fn sanitizeDistanceParams(opts: *Options) void {
     nd -= nd % mult;
     opts.nDirect = nd;
 }
-fn qualityParams(q: u32) lz77.Params {
-    // Search depth grows with quality; each level uses a distinct depth.
+const quality_params_table = [12]lz77.Params{
+    .{ .max_chain = 1, .lazy = false, .probe_budget = 0, .num_cache_check = 0 },
+    .{ .max_chain = 2, .lazy = true, .probe_budget = 0, .num_cache_check = 4 },
+    .{ .max_chain = 4, .lazy = true, .probe_budget = 0, .num_cache_check = 4 },
+    .{ .max_chain = 8, .lazy = true, .probe_budget = 0, .num_cache_check = 4 },
+    .{ .max_chain = 16, .lazy = true, .probe_budget = 0, .num_cache_check = 4 },
+    .{ .max_chain = 32, .lazy = true, .probe_budget = 0, .num_cache_check = 4 },
+    .{ .max_chain = 64, .lazy = true, .probe_budget = 0, .num_cache_check = 4 },
+    .{ .max_chain = 128, .lazy = true, .probe_budget = 0, .num_cache_check = 10 },
+    .{ .max_chain = 256, .lazy = true, .probe_budget = 0, .num_cache_check = 10 },
+    .{ .max_chain = 512, .lazy = true, .probe_budget = 0, .num_cache_check = 16 },
+    .{ .max_chain = 1024, .lazy = true, .probe_budget = 32, .num_cache_check = 16 },
+    .{ .max_chain = 1024, .lazy = true, .probe_budget = 64, .num_cache_check = 16 },
+};
 
-    //
-
-    // `probe_budget` is the candidate-collection budget used by the cost-based
-
-    // parser. It is deliberately far below `max_chain`: a candidate probe
-
-    // costs one full match comparison, so the budget multiplies by the typical
-
-    // match length, and beyond a few dozen entries the extra candidates are
-
-    // near-duplicates of ones already held.
-
-    if (q == 0) return .{ .max_chain = 1, .lazy = false, .probe_budget = 0, .num_cache_check = 0 };
-    if (q == 1) return .{ .max_chain = 2, .lazy = true, .probe_budget = 0, .num_cache_check = 4 };
-    if (q == 2) return .{ .max_chain = 4, .lazy = true, .probe_budget = 0, .num_cache_check = 4 };
-    if (q == 3) return .{ .max_chain = 8, .lazy = true, .probe_budget = 0, .num_cache_check = 4 };
-    if (q == 4) return .{ .max_chain = 16, .lazy = true, .probe_budget = 0, .num_cache_check = 4 };
-    if (q == 5) return .{ .max_chain = 32, .lazy = true, .probe_budget = 0, .num_cache_check = 4 };
-    if (q == 6) return .{ .max_chain = 64, .lazy = true, .probe_budget = 0, .num_cache_check = 4 };
-    if (q == 7) return .{ .max_chain = 128, .lazy = true, .probe_budget = 0, .num_cache_check = 10 };
-    if (q == 8) return .{ .max_chain = 256, .lazy = true, .probe_budget = 0, .num_cache_check = 10 };
-    if (q == 9) return .{ .max_chain = 512, .lazy = true, .probe_budget = 0, .num_cache_check = 16 };
-    if (q == 10) return .{ .max_chain = 1024, .lazy = true, .probe_budget = 32, .num_cache_check = 16 };
-    // Quality 11 refines with a second cost-parse iteration and a wider
-    // candidate budget, not a deeper chain: beyond 1024 the chain walk only
-    // surfaces farther matches that score well locally but thrash the
-    // distance cache globally (measured: identical or worse on corpus).
-    return .{ .max_chain = 1024, .lazy = true, .probe_budget = 64, .num_cache_check = 16 };
+inline fn qualityParams(q: u32) lz77.Params {
+    return quality_params_table[@min(q, 11)];
 }
-const kInsEb = [24]u8{
-    0, 0, 0,  0,  0,  0,  1, 1, 2,
-    2, 3, 3,  4,  4,  5,  5, 6, 7,
-    8, 9, 10, 12, 14, 24,
-};
-const kCopyEb = [24]u8{
-    0,  0,  0, 0, 0, 0, 0, 0, 1, 1, 2,
-    2,  3,  3, 4, 4, 5, 5, 6, 7, 8, 9,
-    10, 24,
-};
-const ins_off: [24]u32 = blk: {
-    @setEvalBranchQuota(10000);
-    var off: [24]u32 = undefined;
-    off[0] = 0;
-    for (0..23) |i| off[i + 1] = off[i] + (@as(u32, 1) << @intCast(kInsEb[i]));
-    break :blk off;
-};
-const copy_off: [24]u32 = blk: {
-    @setEvalBranchQuota(10000);
-    var off: [24]u32 = undefined;
-    off[0] = 2;
-    for (0..23) |i| off[i + 1] = off[i] + (@as(u32, 1) << @intCast(kCopyEb[i]));
-    break :blk off;
-};
+
+const kInsEb = prefix_ranges.kInsertLengthExtraBits;
+const kCopyEb = prefix_ranges.kCopyLengthExtraBits;
+const ins_off = prefix_ranges.insert_length_offsets;
+const copy_off = prefix_ranges.copy_length_offsets;
+const codeFor = prefix_ranges.codeFor;
+
 fn findCode(off: *const [24]u32, target: u32) u8 {
     for (off, 0..) |o, i| {
         if (o == target) return @intCast(i);
     }
     unreachable;
-}
-fn codeFor(off: *const [24]u32, value: u32) struct { code: u8, extra: u32 } {
-    var i: usize = 23;
-    while (i > 0) : (i -= 1) {
-        if (value >= off[i]) return .{ .code = @intCast(i), .extra = value - off[i] };
-    }
-    return .{ .code = 0, .extra = value - off[0] };
 }
 const CmdMaps = struct {
     explicit_sym: [24][24]u16,
