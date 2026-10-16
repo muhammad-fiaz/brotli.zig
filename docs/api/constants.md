@@ -46,8 +46,8 @@ All format constants defined by RFC 7932 reside in `src/common/constants.zig` an
 ## Library Version Identifiers
 
 ```zig
-pub const version = "0.0.4";
-pub const version_number: u32 = 4;
+pub const version = "0.0.5";
+pub const version_number: u32 = 5;
 pub const versionNumberValue: u32 = 4;
 
 pub const spec_version = "1.2.0";

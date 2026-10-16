@@ -141,8 +141,8 @@ pub const StreamingCompressor = struct {
         const n = self.inner.out.items.len - self.inner.out_pos;
         if (n == 0) return &.{};
         const copy = try self.inner.allocator.alloc(u8, n);
-        @memcpy(copy, self.inner.out.items[self.inner.out_pos..]);
-        _ = self.inner.takeOutput(copy);
+        const taken = self.inner.takeOutput(copy);
+        std.debug.assert(taken == n);
         return copy;
     }
 };
@@ -166,9 +166,7 @@ pub fn compressStream(
     try sc.finish(writer);
 }
 
-// -------------------------------------------------------------------------
 // Unit Tests
-// -------------------------------------------------------------------------
 const testing = std.testing;
 
 test "StreamingCompressor basic lifecycle" {

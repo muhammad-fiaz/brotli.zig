@@ -33,7 +33,7 @@ pub const CompressionOptions = struct {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `quality` | `u32` | `11` | Compression level from `0` (fastest) to `11` (maximum compression ratio). |
+| `quality` | `u32` | `11` | Compression level from `0` (fastest) to `11` (deepest match search). Higher levels increase effort but do not guarantee smaller output; see the compatibility notes in this guide. |
 | `lgWin` | `u32` | `22` | Base-2 logarithm of the sliding window size (`10..24`, or up to `30` if `largeWindow = true`). Max backward reference distance is `(1 << lgWin) - 16`. |
 | `mode` | `Mode` | `.generic` | Text-analysis tune: `.generic`, `.text`, or `.font`. |
 | `lgBlock` | `u32` | `0` | Base-2 logarithm of the input block size (`16..24`, or `0` for default). |

@@ -16,7 +16,7 @@ pub const minQuality: u32 = 0;
 pub const maxQuality: u32 = 11;
 pub const defaultQuality: u32 = 11;
 
-// Uppercase aliases for C API familiarity:
+// Standard uppercase aliases:
 pub const MIN_QUALITY: u32 = minQuality;
 pub const MAX_QUALITY: u32 = maxQuality;
 pub const DEFAULT_QUALITY: u32 = defaultQuality;
@@ -24,15 +24,20 @@ pub const DEFAULT_QUALITY: u32 = defaultQuality;
 
 ## Level Profiles & Trade-Offs
 
-| Quality | Match Search | Lazy Evaluation | Primary Use Case |
+| Quality | Match Search | Context Modeling & Splitting | Primary Use Case |
 |---|---|---|---|
-| `0`..`1` | Fast greedy hash-table | Disabled | Real-time low-latency compression (e.g. streaming web sockets) |
-| `2`..`4` | Multi-slot hash-table | Disabled | Fast bulk data ingest, log archival |
-| `5`..`6` | Hash-chain search | Enabled | Balanced daily workloads, HTTP dynamic compression |
-| `7`..`9` | Deep hash chains | Enabled | Static asset generation, release distribution |
-| `10`..`11` | Optimal block splitting & context maps | Enabled | Best possible compression ratio; maximum file size reduction |
+| `0`..`1` | Fast two-pass hash-table | Disabled (Static entropy codes) | Real-time low-latency compression (e.g. streaming web sockets) |
+| `2`..`4` | Multi-slot hash-table | Disabled (Trivial entropy codes) | Fast bulk data ingest, log archival |
+| `5`..`6` | Hash-chain search (depth 16) | Enabled (Greedy block splitting) | Balanced daily workloads, HTTP dynamic compression |
+| `7`..`9` | Deep hash chains (depth 32..64) | Enabled (Greedy block splitting) | Static asset generation, release distribution |
+| `10`..`11` | Full HQ Zopfli optimal parser | Enabled (Optimal block splitting & clustering) | Maximum compression ratio for immutable distribution |
 
-### Quality Selection Example
+- **Quality 0 to 1**: Fast linear-time compression using two-pass match search with static Huffman codes.
+- **Quality 2 to 4**: Single-block trivial metablock construction with fast multi-slot hash matching.
+- **Quality 5 to 9**: Hash-chain match finding with greedy block splitting, literal context modeling (UTF-8 / signed text heuristics), and command/distance clustering.
+- **Quality 10 to 11**: Full Zopfli optimal path backward references using dynamic programming over candidate graph edges, combined with multi-pass block splitting, dynamic distance postfix/direct code optimization, and context-aware histogram clustering.
+
+## Quality Selection Example
 
 ```zig
 const brotli = @import("brotli");
@@ -49,11 +54,11 @@ const balanced = try brotli.compressWithOptions(allocator, data, .{
 });
 defer allocator.free(balanced);
 
-// Maximum ratio for static assets:
-const optimal = try brotli.compressWithOptions(allocator, data, .{
+// Highest effort for static assets:
+const smallest = try brotli.compressWithOptions(allocator, data, .{
     .quality = 11,
 });
-defer allocator.free(optimal);
+defer allocator.free(smallest);
 ```
 
 ## Sliding Window Size (`lgWin`)

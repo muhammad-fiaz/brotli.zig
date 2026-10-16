@@ -1,10 +1,9 @@
 //! Static-dictionary word matching for the encoder.
 //!
-//! Builds a hash index over the embedded RFC 7932 word list - including the
-//! uppercase-first and uppercase-all variants - so the match finder can emit
-//! dictionary back-references for text present in the built-in corpus.
-//! Every transform index is resolved from the shared 121-entry transform
-//! table, keeping encoder and decoder views of the format identical.
+//! Builds a hash index over the embedded word list, including the
+//! uppercase-first and uppercase-all variants, so the match finder can emit
+//! dictionary references for text present in the built-in corpus.
+//! Transform indices resolve through the shared 121-entry transform table.
 
 const std = @import("std");
 const dictionary = @import("../dictionary/dictionary.zig");
@@ -117,10 +116,10 @@ pub const Lut = struct {
 
                 self.add(&n, .{ .len = @intCast(len), .transform = T_IDENTITY, .idx = @intCast(i) });
 
-                if (word[0] >= 'a' and word[0] <= 'z') {
+                if (std.ascii.isLower(word[0])) {
                     var buf: [24]u8 = undefined;
                     @memcpy(buf[0..len], word);
-                    buf[0] -= 32;
+                    buf[0] = std.ascii.toUpper(buf[0]);
                     if (!self.hasIdentityWord(buf[0..len])) {
                         self.add(&n, .{ .len = @intCast(len), .transform = T_UCFIRST, .idx = @intCast(i) });
                     }
@@ -129,7 +128,7 @@ pub const Lut = struct {
                 var has_lower = false;
                 var is_ascii = true;
                 for (word) |c| {
-                    if (c >= 'a' and c <= 'z') {
+                    if (std.ascii.isLower(c)) {
                         has_lower = true;
                     } else if (c < 0x20 or c > 0x7e) {
                         is_ascii = false;
@@ -159,10 +158,10 @@ pub const Lut = struct {
         const raw = dictionary.data[base..][0..w.len];
         switch (w.transform) {
             T_UCFIRST => {
-                if (raw[0] >= 'a' and raw[0] <= 'z') {
+                if (std.ascii.isLower(raw[0])) {
                     var buf: [4]u8 = undefined;
                     @memcpy(&buf, raw[0..4]);
-                    buf[0] -= 32;
+                    buf[0] = std.ascii.toUpper(buf[0]);
                     return hash15(&buf);
                 }
                 return hash15(raw);
@@ -221,7 +220,7 @@ fn dictMatchLength(word: []const u8, data: []const u8, maxlen: usize) usize {
 fn isMatchUpper(raw: []const u8, data: []const u8, transform: u8) bool {
     switch (transform) {
         T_UCFIRST => {
-            if (raw[0] < 'a' or raw[0] > 'z') return false;
+            if (!std.ascii.isLower(raw[0])) return false;
             if (std.ascii.toUpper(raw[0]) != data[0]) return false;
             return dictMatchLength(raw[1..], data[1..], raw.len - 1) == raw.len - 1;
         },
@@ -373,9 +372,7 @@ pub fn findBest(
     return b.cand;
 }
 
-// ---------------------------------------------------------------------------
 // Comptime-resolved transform indices used by the matcher.
-// ---------------------------------------------------------------------------
 
 const IDENTITY_EMPTY: u16 = tId("", .identity, "");
 const OMIT1_EMPTY: ?u16 = tIdOrNull("", .omit_last_1, "");
@@ -430,9 +427,7 @@ const identity_punct_ids = resolvePairs(.identity, &identity_punct_suffixes);
 const upper_ids_first = resolvePairs(.uppercase_first, &upper_suffixes);
 const upper_ids_all = resolvePairs(.uppercase_all, &upper_suffixes);
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 const testing = std.testing;
 
@@ -465,7 +460,7 @@ test "lut finds uppercase-all variants" {
         const w = dictionary.data[base + wi * 6 ..][0..6];
         var lower = true;
         for (w) |ch| {
-            if (ch < 'a' or ch > 'z') {
+            if (!std.ascii.isLower(ch)) {
                 lower = false;
                 break;
             }

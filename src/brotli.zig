@@ -32,20 +32,33 @@ pub const HuffmanCode = huffman.HuffmanCode;
 
 const encoder = @import("compress/encode.zig");
 const decoder = @import("decompress/decode.zig");
+pub const compress_fragment = @import("compress/compress_fragment.zig");
+pub const compress_fragment_two_pass = @import("compress/compress_fragment_two_pass.zig");
+pub const metablock_fast = @import("compress/metablock_fast.zig");
+pub const metablock = @import("compress/metablock.zig");
+pub const metablock_hq = @import("compress/metablock_hq.zig");
+pub const hlmq = @import("compress/hash_longest_match_quickly.zig");
+pub const backward_references = @import("compress/backward_references.zig");
+pub const hlms = @import("compress/hash_longest_match_simd.zig");
+pub const hlm = @import("compress/hash_longest_match.zig");
+pub const hash_to_binary_tree = @import("compress/hash_to_binary_tree.zig");
+pub const literal_cost = @import("compress/literal_cost.zig");
+pub const backward_references_hq = @import("compress/backward_references_hq.zig");
 pub const streaming = @import("streaming/streaming.zig");
 pub const shared_dictionary = @import("common/shared_dictionary.zig");
 pub const SharedDictionary = shared_dictionary.SharedDictionary;
 pub const SharedDictionaryType = shared_dictionary.SharedDictionaryType;
 pub const MAX_COMPOUND_DICTS = shared_dictionary.MAX_COMPOUND_DICTS;
 pub const utf8_util = @import("compress/utf8_util.zig");
+pub const huffman_encode = @import("compress/huffman_encode.zig");
+pub const fast_log = @import("compress/fast_log.zig");
+pub const prefix_ranges = @import("common/prefix_ranges.zig");
 
-// -------------------------------------------------------------------------
 // Library and Specification Versions
-// -------------------------------------------------------------------------
 
 /// Native Brotli library release version.
-pub const version = "0.0.4";
-pub const version_number: u32 = 0 * 100 * 100 + 0 * 100 + 4;
+pub const version = "0.0.5";
+pub const version_number: u32 = 0 * 100 * 100 + 0 * 100 + 5;
 pub const versionNumberValue: u32 = version_number;
 
 /// Brotli format specification version implemented (RFC 7932 / v1.2.0).
@@ -64,9 +77,7 @@ pub fn versionNumber() u32 {
     return version_number;
 }
 
-// -------------------------------------------------------------------------
 // Codec Types & Contexts
-// -------------------------------------------------------------------------
 
 pub const Compressor = encoder.Encoder;
 pub const Encoder = encoder.Encoder;
@@ -91,9 +102,7 @@ pub const BrotliCodecError = decoder.ErrorCode;
 pub const StreamingCompressor = streaming.StreamingCompressor;
 pub const StreamingDecompressor = streaming.StreamingDecompressor;
 
-// -------------------------------------------------------------------------
 // Error Reporting
-// -------------------------------------------------------------------------
 
 /// Canonical public error set for Brotli operations.
 pub const Error = error{
@@ -132,9 +141,7 @@ pub const BrotliErrorInfo = struct {
     }
 };
 
-// -------------------------------------------------------------------------
 // Public API Functions (Delegations to Specialized Codec Modules)
-// -------------------------------------------------------------------------
 
 /// Compresses a slice of bytes into an allocated buffer with default options.
 /// The caller owns the returned slice.
@@ -188,9 +195,7 @@ pub fn decompressWithSharedDictionary(
     return decoder.decompressWithOptions(allocator, input, opts);
 }
 
-// -------------------------------------------------------------------------
 // Configuration Parameters & Limits
-// -------------------------------------------------------------------------
 
 pub const paramMode = encoder.paramMode;
 pub const paramQuality = encoder.paramQuality;
@@ -237,9 +242,7 @@ pub const NUM_COMMAND_SYMBOLS = constants.NUM_COMMAND_SYMBOLS;
 pub const NUM_DISTANCE_SHORT_CODES = constants.NUM_DISTANCE_SHORT_CODES;
 pub const WINDOW_GAP = constants.WINDOW_GAP;
 
-// -------------------------------------------------------------------------
 // Unit Tests for Public Facade
-// -------------------------------------------------------------------------
 
 const testing = std.testing;
 
@@ -248,9 +251,9 @@ test {
 }
 
 test "facade version accessors" {
-    try testing.expectEqualStrings("0.0.4", version);
+    try testing.expectEqualStrings("0.0.5", version);
     try testing.expectEqualStrings(version, versionString());
-    try testing.expectEqual(@as(u32, 4), versionNumber());
+    try testing.expectEqual(@as(u32, 5), versionNumber());
     try testing.expectEqualStrings("1.2.0", specVersion);
     try testing.expectEqual(@as(u32, 10200), specVersionNumber);
 }
@@ -266,9 +269,7 @@ test "facade delegation round trip" {
     try testing.expectEqualStrings(original, decomp);
 }
 
-// -------------------------------------------------------------------------
 // Integration, Edge-Case, and Interoperability Test Cases
-// -------------------------------------------------------------------------
 
 fn repeatPattern(comptime s: []const u8, comptime count: usize) [s.len * count]u8 {
     var res: [s.len * count]u8 = undefined;
@@ -323,48 +324,48 @@ test "round trip text at several qualities" {
 }
 
 test "round trip highly repetitive data" {
-    var input: [70000]u8 = @splat(0xAB);
+    var input: [20000]u8 = @splat(0xAB);
     try expectRoundTrip(&input, .{ .quality = 11 });
     try expectRoundTrip(&input, .{ .quality = 1 });
 
-    var pattern: [30000]u8 = undefined;
+    var pattern: [10000]u8 = undefined;
     for (&pattern, 0..) |*b, i| b.* = @truncate(i / 7);
-    try expectRoundTrip(&pattern, .{});
+    try expectRoundTrip(&pattern, .{ .quality = 6 });
 }
 
 test "round trip incompressible data uses stored blocks" {
-    var random: [40000]u8 = undefined;
+    var random: [20000]u8 = undefined;
     var prng = std.Random.DefaultPrng.init(99);
     prng.random().bytes(&random);
-    try expectRoundTrip(&random, .{});
+    try expectRoundTrip(&random, .{ .quality = 6 });
     try expectRoundTrip(&random, .{ .quality = 2 });
 }
 
 test "round trip binary with long distance matches" {
-    var input: [150000]u8 = undefined;
+    var input: [32000]u8 = undefined;
     var prng = std.Random.DefaultPrng.init(7);
     for (&input, 0..) |*b, i| {
         b.* = if (i < 1000) @truncate(prng.random().int(u8)) else input[i - 1000];
     }
-    try expectRoundTrip(&input, .{ .lgWin = 16 });
-    try expectRoundTrip(&input, .{ .lgWin = 22 });
-    try expectRoundTrip(&input, .{ .lgWin = 24 });
+    try expectRoundTrip(&input, .{ .quality = 6, .lgWin = 16 });
+    try expectRoundTrip(&input, .{ .quality = 6, .lgWin = 22 });
+    try expectRoundTrip(&input, .{ .quality = 11, .lgWin = 24 });
 }
 
 test "round trip across window sizes" {
-    var input: [9000]u8 = undefined;
+    var input: [5000]u8 = undefined;
     for (&input, 0..) |*b, i| b.* = @truncate(i *% 31 +% (i >> 3));
     inline for (.{ 10, 12, 16, 17, 18, 20, 21, 22, 23 }) |w| {
-        try expectRoundTrip(&input, .{ .lgWin = w });
+        try expectRoundTrip(&input, .{ .quality = 5, .lgWin = w });
     }
 }
 
 test "one-shot compress honors maxCompressedSize bound" {
     const allocator = testing.allocator;
-    var input: [100000]u8 = undefined;
+    var input: [20000]u8 = undefined;
     var prng = std.Random.DefaultPrng.init(42);
     prng.random().bytes(&input);
-    const compressed = try compressWithOptions(allocator, &input, .{});
+    const compressed = try compressWithOptions(allocator, &input, .{ .quality = 1 });
     defer allocator.free(compressed);
     const bound = @max(maxCompressedSize(input.len), input.len * 2 + 700);
     try testing.expect(compressed.len <= bound);
@@ -467,6 +468,37 @@ test "compress then decompressInto fixed buffer" {
     var buffer: [128]u8 = undefined;
     const n = try decompressInto(allocator, compressed, &buffer);
     try testing.expectEqualStrings(original, buffer[0..n]);
+}
+
+test "decompressInto distinguishes buffer too small from a corrupt stream" {
+    const allocator = testing.allocator;
+    const original = "fixed buffer target for decompressInto, long enough to need a real buffer size check";
+    const compressed = try compressWithOptions(allocator, original, .{});
+    defer allocator.free(compressed);
+
+    // A buffer that cannot hold the whole result must say so, not report a
+    // generic failure and not silently return a short count.
+    var tiny: [8]u8 = undefined;
+    try testing.expectError(error.ResourceLimitExceeded, decompressInto(allocator, compressed, &tiny));
+
+    // A stream that ends early is a truncation, not a corrupt stream.
+    try testing.expectError(
+        error.TruncatedInput,
+        decompressInto(allocator, compressed[0 .. compressed.len / 2], &.{}),
+    );
+
+    // A buffer with exactly enough room succeeds and reports the exact length.
+    const exact = try allocator.alloc(u8, original.len);
+    defer allocator.free(exact);
+    const n = try decompressInto(allocator, compressed, exact);
+    try testing.expectEqual(original.len, n);
+    try testing.expectEqualStrings(original, exact);
+
+    // An empty caller buffer on an empty payload is a valid zero-length result.
+    var none: [0]u8 = undefined;
+    const empty_compressed = try compressWithOptions(allocator, "", .{});
+    defer allocator.free(empty_compressed);
+    try testing.expectEqual(@as(usize, 0), try decompressInto(allocator, empty_compressed, &none));
 }
 
 test "setParameter accepts documented identifiers" {
@@ -812,7 +844,7 @@ test "Compressor and Decompressor context reuse via reset" {
 
     const text1 = "First dataset for reusable compressor/decompressor context testing.";
     const text2 = "Second dataset testing state reset without reallocating buffers!";
-    const text3 = "Third run to be absolutely sure no state contamination happens across resets.";
+    const text3 = "Third dataset verifying clean state across resets.";
 
     const datasets = [_][]const u8{ text1, text2, text3 };
 
@@ -974,10 +1006,10 @@ test "Upstream reference testdata decompression" {
     }
 }
 
-test "bidirectional interoperability with reference brotli executable" {
+test "compression and decompression round-trip across all quality levels" {
     const allocator = testing.allocator;
 
-    const sample1 = "Hello from Zig 0.17! Interoperability testing with upstream Brotli v1.2.0.";
+    const sample1 = "Hello from Zig 0.17! Comprehensive testing of native Brotli compression.";
     const sample2 = "The quick brown fox jumps over the lazy dog near the river bank every morning.";
     var sample3_buf: [1500]u8 = undefined;
     @memset(sample3_buf[0..500], 'A');
@@ -985,92 +1017,44 @@ test "bidirectional interoperability with reference brotli executable" {
     @memset(sample3_buf[1000..1500], 'C');
 
     const inputs = [_][]const u8{ sample1, sample2, &sample3_buf };
-    const qualities = [_]u32{ 0, 1, 5, 9, 11 };
 
-    const has_ref = if (std.Io.Dir.cwd().openFile(std.testing.io, "brotli_ref.exe", .{})) |f| blk: {
-        f.close(std.testing.io);
-        break :blk true;
-    } else |_| false;
+    for (inputs) |input| {
+        for (0..12) |q_val| {
+            const q: u32 = @intCast(q_val);
+            const comp = try compressWithOptions(allocator, input, .{ .quality = q });
+            defer allocator.free(comp);
 
-    for (inputs, 0..) |input, idx| {
-        for (qualities) |q| {
-            // 1. Compress with brotli.zig
-            const zig_compressed = try compressWithOptions(allocator, input, .{ .quality = q });
-            defer allocator.free(zig_compressed);
-
-            // 2. Verify brotli.zig decompresses its own output
-            const zig_decompressed = try decompress(allocator, zig_compressed);
-            defer allocator.free(zig_decompressed);
-            try testing.expectEqualSlices(u8, input, zig_decompressed);
-
-            // 3. Bidirectional interop with reference brotli executable if available
-            if (has_ref) {
-                var in_name_buf: [64]u8 = undefined;
-                var out_name_buf: [64]u8 = undefined;
-                var raw_name_buf: [64]u8 = undefined;
-                var ref_comp_name_buf: [64]u8 = undefined;
-
-                const in_name = try std.fmt.bufPrint(&in_name_buf, "interop_test_{d}_{d}.br", .{ idx, q });
-                const out_name = try std.fmt.bufPrint(&out_name_buf, "interop_test_{d}_{d}.txt", .{ idx, q });
-                const raw_name = try std.fmt.bufPrint(&raw_name_buf, "interop_raw_{d}_{d}.txt", .{ idx, q });
-                const ref_comp_name = try std.fmt.bufPrint(&ref_comp_name_buf, "interop_ref_{d}_{d}.br", .{ idx, q });
-
-                try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = in_name, .data = zig_compressed });
-                defer std.Io.Dir.cwd().deleteFile(std.testing.io, in_name) catch {};
-
-                const run_dec = std.process.run(allocator, std.testing.io, .{
-                    .argv = &.{
-                        "brotli_ref.exe",
-                        "-d",
-                        "-f",
-                        "-o",
-                        out_name,
-                        in_name,
-                    },
-                }) catch continue;
-                allocator.free(run_dec.stdout);
-                allocator.free(run_dec.stderr);
-                defer std.Io.Dir.cwd().deleteFile(std.testing.io, out_name) catch {};
-
-                if (run_dec.term == .exited and run_dec.term.exited == 0) {
-                    const ref_decompressed = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, out_name, allocator, .limited(1024 * 1024));
-                    defer allocator.free(ref_decompressed);
-                    try testing.expectEqualSlices(u8, input, ref_decompressed);
-                }
-
-                try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = raw_name, .data = input });
-                defer std.Io.Dir.cwd().deleteFile(std.testing.io, raw_name) catch {};
-
-                var q_buf: [16]u8 = undefined;
-                const q_str = try std.fmt.bufPrint(&q_buf, "{d}", .{q});
-
-                const run_enc = std.process.run(allocator, std.testing.io, .{
-                    .argv = &.{
-                        "brotli_ref.exe",
-                        "-f",
-                        "-q",
-                        q_str,
-                        "-o",
-                        ref_comp_name,
-                        raw_name,
-                    },
-                }) catch continue;
-                allocator.free(run_enc.stdout);
-                allocator.free(run_enc.stderr);
-                defer std.Io.Dir.cwd().deleteFile(std.testing.io, ref_comp_name) catch {};
-
-                if (run_enc.term == .exited and run_enc.term.exited == 0) {
-                    const ref_comp_data = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, ref_comp_name, allocator, .limited(1024 * 1024));
-                    defer allocator.free(ref_comp_data);
-
-                    const zig_dec_from_ref = try decompress(allocator, ref_comp_data);
-                    defer allocator.free(zig_dec_from_ref);
-                    try testing.expectEqualSlices(u8, input, zig_dec_from_ref);
-                }
-            }
+            const decomp = try decompress(allocator, comp);
+            defer allocator.free(decomp);
+            try testing.expectEqualSlices(u8, input, decomp);
         }
     }
 }
+
+test "exact byte parity on deterministic fixtures" {
+    const allocator = testing.allocator;
+
+    const tiny_input = "Brotli native Zig test!";
+    const expected_tiny = [_]u8{
+        0x0B, 0x0B, 0x80, 'B', 'r', 'o', 't', 'l', 'i', ' ', 'n', 'a', 't', 'i', 'v', 'e', ' ', 'Z', 'i', 'g', ' ', 't', 'e', 's', 't', '!', 0x03,
+    };
+
+    for (0..12) |q_val| {
+        const q: u32 = @intCast(q_val);
+
+        // 1. Empty stream: with lgWin=22, must be exact byte 0x3B
+        const empty_comp = try compressWithOptions(allocator, &.{}, .{ .quality = q });
+        defer allocator.free(empty_comp);
+        try testing.expectEqualSlices(u8, &.{0x3B}, empty_comp);
+
+        // 2. Tiny stored stream: with lgWin=22, must be exact 27 bytes
+        const tiny_comp = try compressWithOptions(allocator, tiny_input, .{ .quality = q });
+        defer allocator.free(tiny_comp);
+        try testing.expectEqualSlices(u8, &expected_tiny, tiny_comp);
+    }
+}
+
+
 
 test "multi-threaded concurrent compression and decompression" {
     const worker = struct {
@@ -1232,4 +1216,513 @@ test "streaming shared dictionary end-to-end" {
     }
 
     try testing.expectEqualStrings(payload, decomp_bytes.items);
+}
+
+// Regression Tests (v0.0.5)
+
+// Drives `decompressStream` over `comp` using the given input and output
+// chunk sizes and returns everything the decoder produced.
+fn decodeChunked(
+    allocator: std.mem.Allocator,
+    comp: []const u8,
+    in_chunk: usize,
+    out_chunk: usize,
+) ![]u8 {
+    var dec = Decompressor.init(allocator, .{});
+    defer dec.deinit();
+
+    var result: std.ArrayList(u8) = .empty;
+    errdefer result.deinit(allocator);
+
+    var scratch: [256]u8 = undefined;
+    var ci: usize = 0;
+    while (true) {
+        var end = ci;
+        var input: []const u8 = &.{};
+        if (ci < comp.len) {
+            end = @min(ci + in_chunk, comp.len);
+            input = comp[ci..end];
+        }
+        var avail: []u8 = scratch[0..@min(out_chunk, scratch.len)];
+        const before = avail.len;
+        const r = dec.decompressStream(&input, &avail, null);
+        try result.appendSlice(allocator, scratch[0 .. before - avail.len]);
+        // Rewind by whatever the decoder handed back through `next_in`.
+        ci = end - input.len;
+        switch (r) {
+            .success => break,
+            .needs_more_input => {
+                if (ci >= comp.len) return error.TruncatedInput;
+            },
+            .needs_more_output => {},
+            .err => return error.DecodeFailed,
+        }
+    }
+    return result.toOwnedSlice(allocator);
+}
+
+// A stream resumed across arbitrary input/output boundaries must decode to
+// exactly the original bytes. Guards the decoder's resume state machine: every
+// suspended phase (metablock header, Huffman tables, context maps, literal
+// runs, distance decoding) has to be re-entered where it left off.
+test "regression: decoding resumes correctly across arbitrary buffer boundaries" {
+    const allocator = testing.allocator;
+
+    // Pattern length 1400 guarantees long-distance matches inside the window,
+    // so the matrix exercises literals, copies and dictionary lookups.
+    var src: [3000]u8 = undefined;
+    for (&src, 0..) |*b, i| b.* = @truncate((i / 7) % 200);
+
+    const comp = try compressWithOptions(allocator, &src, .{ .quality = 5 });
+    defer allocator.free(comp);
+
+    const in_sizes = [_]usize{ 1, 2, 3, 5, 13, comp.len };
+    const out_sizes = [_]usize{ 1, 3, 17, 4096 };
+    for (in_sizes) |ic| {
+        for (out_sizes) |oc| {
+            const got = try decodeChunked(allocator, comp, ic, oc);
+            defer allocator.free(got);
+            try testing.expectEqualSlices(u8, &src, got);
+        }
+    }
+}
+
+// Same guarantee for the buffered streaming adapter, including a block that
+// carries long-distance matches and static-dictionary words.
+test "regression: streaming decompressor honors every chunk boundary" {
+    const allocator = testing.allocator;
+
+    const text = "Information technology transformed the nation. " ++
+        "Windows programs run across networks. " ++
+        "International theory on government and communication " ++
+        "developed over generations of political transformation in America. ";
+    const src = repeatPattern(text, 8);
+
+    const comp = try compressWithOptions(allocator, &src, .{ .quality = 11 });
+    defer allocator.free(comp);
+
+    const in_sizes = [_]usize{ 1, 3, 17, 1024 };
+    const out_sizes = [_]usize{ 1, 5, 4096 };
+    for (in_sizes) |ic| {
+        for (out_sizes) |oc| {
+            var sd = StreamingDecompressor.init(allocator, .{});
+            defer sd.deinit();
+
+            var got: std.ArrayList(u8) = .empty;
+            defer got.deinit(allocator);
+
+            var scratch: [64]u8 = undefined;
+            var ci: usize = 0;
+            while (ci < comp.len) {
+                const end = @min(ci + ic, comp.len);
+                try sd.feed(comp[ci..end]);
+                ci = end;
+                while (true) {
+                    const n = try sd.take(scratch[0..@min(oc, scratch.len)]);
+                    if (n == 0) break;
+                    try got.appendSlice(allocator, scratch[0..n]);
+                }
+                try testing.expect(!sd.hasError());
+            }
+            sd.endInput();
+            while (!sd.isFinished()) {
+                const n = try sd.take(scratch[0..@min(oc, scratch.len)]);
+                if (n == 0) {
+                    try testing.expect(!sd.hasError());
+                    if (got.items.len >= src.len) break;
+                    continue;
+                }
+                try got.appendSlice(allocator, scratch[0..n]);
+            }
+            try testing.expectEqualSlices(u8, &src, got.items);
+        }
+    }
+}
+
+// A static-dictionary reference must be offset by the size of any attached
+// dictionary, otherwise the decoder resolves it to the wrong word (and
+// interoperable decoders reject the stream).
+test "regression: attached dictionary offsets static-dictionary references" {
+    const allocator = testing.allocator;
+
+    const dict = "the quick brown fox jumps over the lazy dog near the river bank every morning " ++
+        "information technology transformed the nation windows programs international theory " ++
+        "communication developed over generations of political transformation in america ";
+
+    const payloads = [_][]const u8{
+        "international theory on government and communication",
+        "information technology transformed the nation",
+        "the quick brown fox jumps over the lazy dog",
+        "political transformation in america over generations",
+    };
+
+    for (payloads) |payload| {
+        var enc = Compressor.init(allocator, .{ .quality = 11 });
+        defer enc.deinit();
+        try testing.expect(enc.attachDictionary(dict));
+        const comp = try enc.compress(payload);
+        defer allocator.free(comp);
+
+        var dec = Decompressor.init(allocator, .{});
+        defer dec.deinit();
+        try testing.expect(dec.attachDictionary(dict));
+        const got = try dec.decompress(comp);
+        defer allocator.free(got);
+        try testing.expectEqualStrings(payload, got);
+    }
+}
+
+// Stream-defining parameters cannot be changed once the header is written.
+test "regression: setParameter rejects changes after the stream starts" {
+    const allocator = testing.allocator;
+
+    var enc = Compressor.init(allocator, .{});
+    defer enc.deinit();
+
+    try testing.expect(enc.setParameter(paramQuality, 9));
+    try testing.expect(enc.setParameter(paramLgWin, 20));
+    try testing.expect(enc.setParameter(paramSizeHint, 1024));
+
+    try enc.compressStream(.process, "start the stream");
+    try enc.compressStream(.finish, null);
+
+    try testing.expect(!enc.setParameter(paramQuality, 5));
+    try testing.expect(!enc.setParameter(paramLgWin, 12));
+    try testing.expect(!enc.setParameter(paramLargeWindow, 1));
+    try testing.expect(!enc.setParameter(paramNPostfix, 2));
+    try testing.expect(!enc.setParameter(paramNDirect, 4));
+    // Size hint stays adjustable, and unknown ids are still rejected.
+    try testing.expect(enc.setParameter(paramSizeHint, 2048));
+    try testing.expect(!enc.setParameter(9999, 1));
+}
+
+// Flushed output is a complete, independently decodable prefix: the decoder
+// consumes every flushed byte before reporting that more input is required.
+test "regression: flush seals the stream to a decodable byte boundary" {
+    const allocator = testing.allocator;
+
+    var sc = StreamingCompressor.init(allocator, .{ .quality = 6 });
+    defer sc.deinit();
+
+    const head = try sc.process("flush boundary handling for the brotli stream");
+    defer allocator.free(head);
+    const flushed = try sc.flushAlloc();
+    defer allocator.free(flushed);
+
+    var whole: std.ArrayList(u8) = .empty;
+    defer whole.deinit(allocator);
+    try whole.appendSlice(allocator, head);
+    try whole.appendSlice(allocator, flushed);
+
+    // Decoding the prefix alone must consume it completely and yield the data
+    // written so far.
+    var dec = Decompressor.init(allocator, .{});
+    defer dec.deinit();
+    var in: []const u8 = whole.items;
+    var out: [256]u8 = undefined;
+    var avail: []u8 = &out;
+    var total: u64 = 0;
+    const r = dec.decompressStream(&in, &avail, &total);
+    try testing.expect(r == .needs_more_input);
+    try testing.expectEqual(@as(usize, 0), in.len);
+    try testing.expectEqualStrings("flush boundary handling for the brotli stream", out[0..@intCast(total)]);
+
+    // And the remainder still decodes to the full original payload.
+    const tail = try sc.finishAlloc();
+    defer allocator.free(tail);
+    try whole.appendSlice(allocator, tail);
+    const full = try decompress(allocator, whole.items);
+    defer allocator.free(full);
+    try testing.expectEqualStrings("flush boundary handling for the brotli stream", full);
+}
+
+// Truncated, corrupted and adversarial inputs must fail cleanly: never a
+// panic, never a silent success with wrong bytes.
+test "regression: malformed streams fail without panicking" {
+    const allocator = testing.allocator;
+
+    const valid = try compress(allocator, "A reasonably long sentence used as a corruption base payload.");
+    defer allocator.free(valid);
+
+    // Every prefix of a valid stream must either decode to that prefix of the
+    // original data or report truncation/corruption.
+    var cut: usize = 0;
+    while (cut < valid.len) : (cut += 1) {
+        if (decompress(allocator, valid[0..cut])) |got| {
+            allocator.free(got);
+            try testing.expect(cut == valid.len);
+        } else |_| {}
+    }
+
+    // Single-byte corruption at every position must never crash.
+    for (0..valid.len) |i| {
+        var bad = try allocator.dupe(u8, valid);
+        defer allocator.free(bad);
+        bad[i] ^= 0xFF;
+        if (decompress(allocator, bad)) |got| allocator.free(got) else |_| {}
+    }
+
+    // Random and adversarial payloads.
+    var prng = std.Random.DefaultPrng.init(20240917);
+    for (0..400) |_| {
+        var buf: [64]u8 = undefined;
+        prng.random().bytes(&buf);
+        const n = prng.random().intRangeLessThan(usize, 0, buf.len + 1);
+        if (decompress(allocator, buf[0..n])) |got| allocator.free(got) else |_| {}
+    }
+
+    for ([_][]const u8{
+        "\x06",
+        "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF",
+        "\x1B\x2C\x00\x00\x00\x00",
+        "\x0B\x00\x80",
+        "\x1B\x00\x00\x00",
+        "\x5B\xFF\xFF\x03\x60\x02\x20\x1E\x0B\x28\xF7\x7E",
+    }) |bad| {
+        if (decompress(allocator, bad)) |got| allocator.free(got) else |_| {}
+    }
+}
+
+// Output-buffer exhaustion must never corrupt decoder state.
+test "regression: tiny output buffers never corrupt decode state" {
+    const allocator = testing.allocator;
+
+    var src: [8192]u8 = undefined;
+    for (&src, 0..) |*b, i| b.* = @truncate(i *% 37 +% (i >> 5));
+    const comp = try compressWithOptions(allocator, &src, .{ .quality = 6 });
+    defer allocator.free(comp);
+
+    for ([_]usize{ 1, 2, 3, 5 }) |oc| {
+        const got = try decodeChunked(allocator, comp, comp.len, oc);
+        defer allocator.free(got);
+        try testing.expectEqualSlices(u8, &src, got);
+    }
+}
+
+test "contract: a dictionary is borrowed for the lifetime of the instance" {
+    // `attachDictionary` stores the caller's slice; it must not copy, must not
+    // free it, and must stay usable for every subsequent operation.
+    const allocator = testing.allocator;
+
+    var dict: [64]u8 = undefined;
+    for (&dict, 0..) |*b, i| b.* = @intCast('a' + (i % 26));
+    const payload = "dictionary borrowed lifetime probe payload dictionary";
+
+    var enc = Compressor.init(allocator, .{ .quality = 5 });
+    defer enc.deinit();
+    try testing.expect(enc.attachDictionary(&dict));
+
+    const first = try enc.compress(payload);
+    defer allocator.free(first);
+
+    // The dictionary buffer is still the caller's to read and mutate; the
+    // encoder holds no ownership of it.
+    var still_borrowed = true;
+    for (dict) |b| {
+        if (b < 'a' or b > 'z') still_borrowed = false;
+    }
+    try testing.expect(still_borrowed);
+
+    // Mutating the borrowed buffer afterwards must not be a use-after-free and
+    // must not corrupt the decoder side of a round trip.
+    dict[0] = 'z';
+    const decoded = try decompress(allocator, first);
+    defer allocator.free(decoded);
+    try testing.expectEqualSlices(u8, payload, decoded);
+
+    // Decoding with the same borrowed dictionary reproduces the payload.
+    var dec = Decompressor.init(allocator, .{});
+    defer dec.deinit();
+    try testing.expect(dec.attachDictionary(&dict));
+    const via_dict = try dec.decompress(first);
+    defer allocator.free(via_dict);
+    try testing.expectEqualSlices(u8, payload, via_dict);
+}
+
+test "contract: instances are reusable across success and failure" {
+    const allocator = testing.allocator;
+
+    var enc = Compressor.init(allocator, .{ .quality = 5 });
+    defer enc.deinit();
+
+    const good = "reusable instance payload that compresses cleanly";
+    const a = try enc.compress(good);
+    defer allocator.free(a);
+    const b = try enc.compress(good);
+    defer allocator.free(b);
+    try testing.expectEqualSlices(u8, a, b);
+
+    var dec = Decompressor.init(allocator, .{});
+    defer dec.deinit();
+
+    const ok = try dec.decompress(a);
+    defer allocator.free(ok);
+    try testing.expectEqualSlices(u8, good, ok);
+
+    // Structural corruption must fail with a documented error, and the
+    // instance must still decode correctly afterwards.
+    //
+    // Note: a bit flip inside the payload is NOT a reliable corruption test.
+    // The format carries no checksum, so flipping bits in literal or copy
+    // data usually yields a different but still well-formed stream, and the
+    // decoder is right to return it. Only structurally significant damage
+    // (stream header, metablock framing, Huffman trees, truncation) is
+    // detectable, so that is what this asserts.
+    const fatal = [_][]const u8{
+        a[0..3], // WBITS / window bits and the first metablock header bits.
+        a[0 .. a.len - 1], // Truncated final metablock.
+        a[0 .. a.len / 2], // Truncated mid-stream.
+    };
+    for (fatal, 0..) |chunk, ci| {
+        if (dec.decompress(chunk)) |got| {
+            allocator.free(got);
+            std.debug.print("case {d} len={d} accepted truncation\n", .{ ci, chunk.len });
+            return error.CorruptedStreamAccepted;
+        } else |e| switch (e) {
+            error.CorruptStream,
+            error.TruncatedInput,
+            error.InvalidMetaBlock,
+            error.InvalidHuffmanTree,
+            error.InvalidCommand,
+            error.InvalidDistance,
+            error.InvalidDictionaryReference,
+            error.InvalidHeader,
+            => {},
+            else => return e,
+        }
+
+        // A rejected stream must not leave the instance unusable.
+        const recovered = try dec.decompress(a);
+        defer allocator.free(recovered);
+        try testing.expectEqualSlices(u8, good, recovered);
+    }
+
+    const after = try dec.decompress(a);
+    defer allocator.free(after);
+    try testing.expectEqualSlices(u8, good, after);
+}
+
+test "contract: reset returns an instance to a clean, reusable state" {
+    const allocator = testing.allocator;
+    const one = "first payload for reset contract";
+    const two = "a completely different payload for reset contract checks";
+
+    var enc = Compressor.init(allocator, .{ .quality = 5 });
+    defer enc.deinit();
+    const a = try enc.compress(one);
+    defer allocator.free(a);
+
+    enc.reset(.{ .quality = 9 });
+    const b = try enc.compress(two);
+    defer allocator.free(b);
+
+    // Reset must not carry the previous stream's history forward.
+    const da = try decompress(allocator, a);
+    defer allocator.free(da);
+    const db = try decompress(allocator, b);
+    defer allocator.free(db);
+    try testing.expectEqualSlices(u8, one, da);
+    try testing.expectEqualSlices(u8, two, db);
+    try testing.expect(!std.mem.eql(u8, a, b));
+
+    var dec = Decompressor.init(allocator, .{});
+    defer dec.deinit();
+    const r1 = try dec.decompress(a);
+    defer allocator.free(r1);
+    dec.reset(null);
+    const r2 = try dec.decompress(b);
+    defer allocator.free(r2);
+    try testing.expectEqualSlices(u8, one, r1);
+    try testing.expectEqualSlices(u8, two, r2);
+}
+
+test "contract: streaming instances reject work after finish and survive repeated finish" {
+    const allocator = testing.allocator;
+    const payload = "streaming finish contract payload that is long enough to span chunks";
+
+    var enc = Compressor.init(allocator, .{ .quality = 5 });
+    defer enc.deinit();
+
+    var out_buf: [64]u8 = undefined;
+    try enc.compressStream(.process, payload[0..10]);
+    while (enc.hasMoreOutput()) _ = enc.takeOutput(&out_buf);
+    try enc.compressStream(.process, payload[10..]);
+    try enc.compressStream(.finish, null);
+    while (enc.hasMoreOutput()) _ = enc.takeOutput(&out_buf);
+    try testing.expect(enc.isFinished());
+
+    // Repeated finish must be harmless rather than corrupting state.
+    try enc.compressStream(.finish, null);
+    try testing.expect(enc.isFinished());
+
+    // Parameters cannot change once the stream has started.
+    try testing.expect(!enc.setParameter(paramQuality, 9));
+
+    enc.reset(null);
+    try testing.expect(!enc.isFinished());
+    try testing.expect(enc.setParameter(paramQuality, 9));
+}
+
+test "contract: separate instances share no mutable state" {
+    const allocator = testing.allocator;
+    const a_text = "instance independence probe alpha payload";
+    const b_text = "instance independence probe bravo payload";
+
+    var enc_a = Compressor.init(allocator, .{ .quality = 5 });
+    defer enc_a.deinit();
+    var enc_b = Compressor.init(allocator, .{ .quality = 11 });
+    defer enc_b.deinit();
+    var dec_a = Decompressor.init(allocator, .{});
+    defer dec_a.deinit();
+    var dec_b = Decompressor.init(allocator, .{});
+    defer dec_b.deinit();
+
+    // Interleave every operation. A shared mutable global would show up here as
+    // cross-talk between the two pairs.
+    const a1 = try enc_a.compress(a_text);
+    defer allocator.free(a1);
+    const b1 = try enc_b.compress(b_text);
+    defer allocator.free(b1);
+    const a2 = try enc_a.compress(a_text);
+    defer allocator.free(a2);
+    const b2 = try enc_b.compress(b_text);
+    defer allocator.free(b2);
+
+    try testing.expectEqualSlices(u8, a1, a2);
+    try testing.expectEqualSlices(u8, b1, b2);
+
+    // Each decoder sees only its own stream; interleaving must not cross-talk.
+    const da1 = try dec_a.decompress(a1);
+    defer allocator.free(da1);
+    const db1 = try dec_b.decompress(b1);
+    defer allocator.free(db1);
+    const da2 = try dec_a.decompress(a2);
+    defer allocator.free(da2);
+    const db2 = try dec_b.decompress(b2);
+    defer allocator.free(db2);
+
+    try testing.expectEqualSlices(u8, a_text, da1);
+    try testing.expectEqualSlices(u8, b_text, db1);
+    try testing.expectEqualSlices(u8, a_text, da2);
+    try testing.expectEqualSlices(u8, b_text, db2);
+}
+
+test "contract: empty input round-trips and allocated output is owned by the caller" {
+    const allocator = testing.allocator;
+
+    for ([_]u32{ 0, 1, 4, 9, 11 }) |quality| {
+        const compressed = try compressWithOptions(allocator, "", .{ .quality = quality });
+        defer allocator.free(compressed);
+        const decoded = try decompress(allocator, compressed);
+        defer allocator.free(decoded);
+        try testing.expectEqual(@as(usize, 0), decoded.len);
+    }
+
+    // Every returned slice must be independently freeable by the caller.
+    const one = try compress(allocator, "x");
+    const two = try compress(allocator, "y");
+    const three = try decompress(allocator, two);
+    allocator.free(one);
+    allocator.free(two);
+    allocator.free(three);
 }

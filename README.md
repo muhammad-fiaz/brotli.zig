@@ -122,7 +122,7 @@ zig build -Dtarget=x86-windows
 ### Method 1: Zig Fetch (Recommended) - Latest Release
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.4.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.5.tar.gz
 ```
 
 For projects using **Zig 0.16.0**, install the `v0.0.3` release:
@@ -310,7 +310,7 @@ defer allocator.free(decomp);
 | `brotli.compressStream(alloc, reader, writer, opts)` | Stream compression via `std.Io` |
 | `brotli.decompressStream(alloc, reader, writer, opts)` | Stream decompression via `std.Io` |
 | `brotli.maxCompressedSize(src_size)` | Calculate upper bound on compressed size |
-| `brotli.versionString()` / `versionNumber()` | Library version (`0.0.4` / `4`) |
+| `brotli.versionString()` / `versionNumber()` | Library version (`0.0.5` / `5`) |
 
 ### Types
 
@@ -355,6 +355,7 @@ The `examples/` directory contains complete, runnable examples:
 | `error_handling` | `examples/error_handling.zig` | Corrupted bitstream detection and diagnostics |
 | `format_introspection` | `examples/format_introspection.zig` | Library version, codec constants, and format limits |
 | `bit_level` | `examples/bit_level.zig` | Low-level bit reader and writer primitives |
+| `io_pipeline` | `examples/io_pipeline.zig` | In-memory, caller-buffer, reader/writer, and chunked I/O shapes |
 
 Run any example:
 
@@ -362,7 +363,7 @@ Run any example:
 zig build run-compress_file
 zig build run-streaming_compression
 zig build run-reusable_context
-zig build run-all-examples   # Run all 9 examples
+zig build run-all-examples   # Run all 10 examples
 ```
 
 ---
@@ -373,7 +374,7 @@ zig build run-all-examples   # Run all 9 examples
 zig build                    # Build native Brotli library
 zig build test               # Run all unit and interoperability tests
 zig build test --summary all # Detailed test execution summary
-zig build run-all-examples   # Run all 9 example executables
+zig build run-all-examples   # Run all 10 example executables
 zig build fuzz               # Run decoder fuzzer
 zig build docs               # Generate documentation in zig-out/docs/
 ```
@@ -408,6 +409,3 @@ This project does not depend on the upstream implementation.
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## Author
-
-**Muhammad Fiaz** (https://github.com/muhammad-fiaz)

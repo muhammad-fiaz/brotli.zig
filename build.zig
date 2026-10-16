@@ -55,6 +55,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "reusable_context", .file = "examples/reusable_context.zig" },
         .{ .name = "format_introspection", .file = "examples/format_introspection.zig" },
         .{ .name = "bit_level", .file = "examples/bit_level.zig" },
+        .{ .name = "io_pipeline", .file = "examples/io_pipeline.zig" },
     };
 
     const run_all = b.step("run-all-examples", "Run all examples");

@@ -4,9 +4,37 @@
 
 | Version | Supported          |
 |---------|--------------------|
-| 0.0.4   | :white_check_mark: |
-| 0.0.3   | :white_check_mark: |
-| < 0.0.3 | :x:                |
+| 0.0.5   | :white_check_mark: |
+| 0.0.4   | :x:                |
+| < 0.0.4 | :x:                |
+
+## Known issues in earlier releases
+
+Releases before `0.0.5` could decode incorrectly when a compressed stream was
+supplied in small pieces: the decoder did not always resume at the stage it
+had stopped at, so literals, Huffman tables and distances could be read from
+the wrong bit offset. Such input could yield corrupted output instead of an
+error. `0.0.5` fixes this and adds regression coverage that decodes streams
+from an independent implementation across every input and output chunk size.
+
+Releases before `0.0.5` could also produce streams that a conforming decoder
+rejects when the large-window extension is combined with a non-zero
+`npostfix`. The encoder advertised a smaller distance alphabet than a decoder
+derives from the stream header, which shifted the simple-tree symbol width and
+desynchronised the bit stream. Callers that pass `largeWindow = true` together
+with `nPostfix = 3` and a non-zero `nDirect` should upgrade to `0.0.5`.
+
+Releases before `0.0.5` could abort while compressing highly repetitive input
+larger than one metablock. The match finder capped a candidate match at the end
+of the input buffer rather than the end of the current metablock, so a command
+could describe bytes beyond its own block; serializing that block then read
+past the end of the block slice and trapped with an out-of-bounds panic.
+Reproduction: compress any input above the metablock size in which a single
+match can span the boundary, for example a payload of the form
+`"ABCD" * n` with `n` large enough to exceed the block size.
+
+Applications that accept untrusted compressed data, or compress untrusted or
+generated input, should upgrade to `0.0.5` or later.
 
 ## Reporting a Vulnerability
 

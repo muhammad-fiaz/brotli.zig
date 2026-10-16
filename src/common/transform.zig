@@ -69,9 +69,7 @@ pub fn suffixOf(transform_idx: usize) []const u8 {
 
 fn toUpperCase(p: []u8) usize {
     if (p[0] < 0xC0) {
-        if (std.ascii.isLower(p[0])) {
-            p[0] = std.ascii.toUpper(p[0]);
-        }
+        p[0] = std.ascii.toUpper(p[0]);
         return 1;
     }
     // An overly simplified uppercasing model for UTF-8.
