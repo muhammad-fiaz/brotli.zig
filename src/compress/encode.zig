@@ -124,7 +124,6 @@ fn sanitizeDistanceParams(opts: *Options) void {
     const max_nd = @as(u32, 15) * mult;
     var nd = opts.nDirect;
     if (nd > max_nd) nd = max_nd;
-    if (opts.nDirect > constants.MAX_NDIRECT) opts.nDirect = constants.MAX_NDIRECT;
     nd -= nd % mult;
     opts.nDirect = nd;
 }
