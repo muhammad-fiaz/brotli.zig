@@ -70,6 +70,7 @@ jobs:
       # spawn by bare name. musl targets link statically, so no foreign loader
       # is required.
       - name: Install QEMU
+        if: matrix.qemu
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-user
@@ -99,8 +100,11 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+          cache-key: ${{ matrix.target }}
       - run: zig build test -Dtarget=${{ matrix.target }} --summary all
 
+  # macOS runner labels are version-pinned: macos-13 was retired, so the Intel
+  # x64 image is now macos-15-intel. macos-latest resolves to an arm64 image.
   test-macos:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -110,12 +114,13 @@ jobs:
       matrix:
         include:
           - { name: aarch64-macos, target: aarch64-macos, os: macos-latest }
-          - { name: x86_64-macos, target: x86_64-macos, os: macos-13 }
+          - { name: x86_64-macos, target: x86_64-macos, os: macos-15-intel }
     steps:
       - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+          cache-key: ${{ matrix.target }}
       - run: zig build test -Dtarget=${{ matrix.target }} --summary all
 
   # Targets whose tests cannot be executed on any runner. Zig 0.17.0's own test
@@ -138,4 +143,5 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+          cache-key: ${{ matrix.target }}
       - run: zig build -Dtarget=${{ matrix.target }}
