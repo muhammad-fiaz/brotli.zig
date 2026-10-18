@@ -4,11 +4,22 @@
 
 | Version | Supported          |
 |---------|--------------------|
+| 0.0.6   | :white_check_mark: |
 | 0.0.5   | :white_check_mark: |
 | 0.0.4   | :x:                |
 | < 0.0.4 | :x:                |
 
 ## Known issues in earlier releases
+
+Releases before `0.0.6` did not build on 32-bit targets (`x86`, `armv7`, `thumb`,
+`riscv32`). The quality 0 and quality 1 fast paths derived entropy-code symbol
+indices from `std.math.log2_int(usize, ...)`, whose return type is
+`Log2Int(usize)` - `u6` on a 64-bit host but only `u5` on a 32-bit host. Adding
+a symbol-table base such as `nbits + 50` therefore compiled at 64 bits but
+overflowed `u5` at 32 bits, either failing to compile or trapping with
+`integer overflow` mid-compression. Callers targeting 32-bit platforms must
+upgrade to `0.0.6` or later. `0.0.6` widens these intermediates to `usize`
+explicitly and adds `x86-windows` / `x86-linux` to CI.
 
 Releases before `0.0.5` could decode incorrectly when a compressed stream was
 supplied in small pieces: the decoder did not always resume at the stage it
@@ -34,7 +45,7 @@ match can span the boundary, for example a payload of the form
 `"ABCD" * n` with `n` large enough to exceed the block size.
 
 Applications that accept untrusted compressed data, or compress untrusted or
-generated input, should upgrade to `0.0.5` or later.
+generated input, should upgrade to `0.0.6` or later.
 
 ## Reporting a Vulnerability
 

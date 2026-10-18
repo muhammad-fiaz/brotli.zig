@@ -57,8 +57,8 @@ pub const prefix_ranges = @import("common/prefix_ranges.zig");
 // Library and Specification Versions
 
 /// Native Brotli library release version.
-pub const version = "0.0.5";
-pub const version_number: u32 = 0 * 100 * 100 + 0 * 100 + 5;
+pub const version = "0.0.6";
+pub const version_number: u32 = 0 * 100 * 100 + 0 * 100 + 6;
 pub const versionNumberValue: u32 = version_number;
 
 /// Brotli format specification version implemented (RFC 7932 / v1.2.0).
@@ -251,9 +251,9 @@ test {
 }
 
 test "facade version accessors" {
-    try testing.expectEqualStrings("0.0.5", version);
+    try testing.expectEqualStrings("0.0.6", version);
     try testing.expectEqualStrings(version, versionString());
-    try testing.expectEqual(@as(u32, 5), versionNumber());
+    try testing.expectEqual(@as(u32, 6), versionNumber());
     try testing.expectEqualStrings("1.2.0", specVersion);
     try testing.expectEqual(@as(u32, 10200), specVersionNumber);
 }

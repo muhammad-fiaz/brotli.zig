@@ -821,16 +821,16 @@ inline fn emitInsertLen(
         histo[code] += 1;
     } else if (insertlen < 130) {
         const tail = insertlen - 2;
-        const nbits = std.math.log2_int(usize, tail) - 1;
+        const nbits: usize = @as(usize, std.math.log2_int(usize, tail)) - 1;
         const prefix = tail >> @intCast(nbits);
-        const inscode = (nbits << 1) + prefix + 42;
+        const inscode: usize = (nbits << 1) + prefix + 42;
         bit_writer.writeBits(@intCast(depth[inscode]), bits[inscode], storage_ix, storage);
         bit_writer.writeBits(@intCast(nbits), tail - (prefix << @intCast(nbits)), storage_ix, storage);
         histo[inscode] += 1;
     } else if (insertlen < 2114) {
         const tail = insertlen - 66;
-        const nbits = std.math.log2_int(usize, tail);
-        const code = nbits + 50;
+        const nbits: usize = std.math.log2_int(usize, tail);
+        const code: usize = @as(usize, nbits) + 50;
         bit_writer.writeBits(@intCast(depth[code]), bits[code], storage_ix, storage);
         bit_writer.writeBits(@intCast(nbits), tail - (@as(usize, 1) << @intCast(nbits)), storage_ix, storage);
         histo[code] += 1;
@@ -874,16 +874,16 @@ inline fn emitCopyLen(
         histo[code] += 1;
     } else if (copylen < 134) {
         const tail = copylen - 6;
-        const nbits = std.math.log2_int(usize, tail) - 1;
+        const nbits: usize = @as(usize, std.math.log2_int(usize, tail)) - 1;
         const prefix = tail >> @intCast(nbits);
-        const code = (nbits << 1) + prefix + 20;
+        const code: usize = (nbits << 1) + prefix + 20;
         bit_writer.writeBits(@intCast(depth[code]), bits[code], storage_ix, storage);
         bit_writer.writeBits(@intCast(nbits), tail - (prefix << @intCast(nbits)), storage_ix, storage);
         histo[code] += 1;
     } else if (copylen < 2118) {
         const tail = copylen - 70;
-        const nbits = std.math.log2_int(usize, tail);
-        const code = nbits + 28;
+        const nbits: usize = std.math.log2_int(usize, tail);
+        const code: usize = nbits + 28;
         bit_writer.writeBits(@intCast(depth[code]), bits[code], storage_ix, storage);
         bit_writer.writeBits(@intCast(nbits), tail - (@as(usize, 1) << @intCast(nbits)), storage_ix, storage);
         histo[code] += 1;
@@ -908,15 +908,15 @@ inline fn emitCopyLenLastDistance(
         histo[code] += 1;
     } else if (copylen < 72) {
         const tail = copylen - 8;
-        const nbits = std.math.log2_int(usize, tail) - 1;
+        const nbits: usize = @as(usize, std.math.log2_int(usize, tail)) - 1;
         const prefix = tail >> @intCast(nbits);
-        const code = (nbits << 1) + prefix + 4;
+        const code: usize = (nbits << 1) + prefix + 4;
         bit_writer.writeBits(@intCast(depth[code]), bits[code], storage_ix, storage);
         bit_writer.writeBits(@intCast(nbits), tail - (prefix << @intCast(nbits)), storage_ix, storage);
         histo[code] += 1;
     } else if (copylen < 136) {
         const tail = copylen - 8;
-        const code = (tail >> 5) + 30;
+        const code: usize = (tail >> 5) + 30;
         bit_writer.writeBits(@intCast(depth[code]), bits[code], storage_ix, storage);
         bit_writer.writeBits(5, tail & 31, storage_ix, storage);
         bit_writer.writeBits(@intCast(depth[64]), bits[64], storage_ix, storage);
@@ -924,8 +924,8 @@ inline fn emitCopyLenLastDistance(
         histo[64] += 1;
     } else if (copylen < 2120) {
         const tail = copylen - 72;
-        const nbits = std.math.log2_int(usize, tail);
-        const code = nbits + 28;
+        const nbits: usize = std.math.log2_int(usize, tail);
+        const code: usize = nbits + 28;
         bit_writer.writeBits(@intCast(depth[code]), bits[code], storage_ix, storage);
         bit_writer.writeBits(@intCast(nbits), tail - (@as(usize, 1) << @intCast(nbits)), storage_ix, storage);
         bit_writer.writeBits(@intCast(depth[64]), bits[64], storage_ix, storage);
@@ -949,10 +949,10 @@ inline fn emitDistance(
     storage: []u8,
 ) void {
     const d = distance + 3;
-    const nbits = std.math.log2_int(usize, d) - 1;
+    const nbits: usize = @as(usize, std.math.log2_int(usize, d)) - 1;
     const prefix = (d >> @intCast(nbits)) & 1;
     const offset = (2 + prefix) << @intCast(nbits);
-    const distcode = 2 * (nbits - 1) + prefix + 80;
+    const distcode: usize = 2 * (nbits - 1) + prefix + 80;
     bit_writer.writeBits(@intCast(depth[distcode]), bits[distcode], storage_ix, storage);
     bit_writer.writeBits(@intCast(nbits), d - offset, storage_ix, storage);
     histo[distcode] += 1;
@@ -1294,7 +1294,7 @@ pub fn compressFragmentFast(
     storage: []u8,
 ) void {
     const initial_storage_ix = storage_ix.*;
-    const table_bits = std.math.log2_int(usize, table.len);
+    const table_bits: usize = std.math.log2_int(usize, table.len);
 
     if (input.len == 0) {
         if (is_last) {

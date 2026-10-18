@@ -508,7 +508,7 @@ pub const BlockEncoder = struct {
             const block_len = self.block_lengths[self.block_ix];
             const block_type = self.block_types[self.block_ix];
             self.block_len = block_len;
-            self.entropy_ix = @as(usize, block_type) << context_bits;
+            self.entropy_ix = @as(usize, block_type) << @as(std.math.Log2Int(usize), @intCast(context_bits));
             storeBlockSwitch(&self.block_split_code, block_len, block_type, false, storage_ix, storage);
         }
         self.block_len -= 1;

@@ -10,10 +10,10 @@ description: How to install and set up brotli.zig in your Zig project.
 - **Zig 0.17.0** (required) - download from [ziglang.org](https://ziglang.org/download/)
 - No external dependencies required - pure Zig implementation
 - Supported OS: Windows 10+, Linux, macOS
-- Supported architectures: x86_64, aarch64, x86
+- Supported architectures: x86_64, aarch64, x86, armv7/thumb, riscv32
 
 ::: info Version Compatibility
-This library (`v0.0.5+`) requires **Zig 0.17.0** as declared in `build.zig.zon` (`minimum_zig_version = "0.17.0"`). For **Zig 0.16.0** support, install release `v0.0.3` (see [Method 1](#method-1-zig-fetch-recommended--latest-release) below).
+This library (`0.0.6+`) requires **Zig 0.17.0** as declared in `build.zig.zon` (`minimum_zig_version = "0.17.0"`). For **Zig 0.16.0** support, install release `0.0.3` (see [Method 1](#method-1-zig-fetch-recommended--latest-release) below).
 :::
 
 ## Setup
@@ -21,21 +21,21 @@ This library (`v0.0.5+`) requires **Zig 0.17.0** as declared in `build.zig.zon` 
 ### Method 1: Zig Fetch (Recommended) - Latest Release
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.5.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.6.tar.gz
 ```
 
-This corresponds to `build.zig.zon` version `0.0.5`:
+This corresponds to `build.zig.zon` version `0.0.6`:
 
 ```zig
 .{
     .name = .brotli,
-    .version = "0.0.5",
+    .version = "0.0.6",
     .minimum_zig_version = "0.17.0",
     // ...
 }
 ```
 
-For projects using **Zig 0.16.0**, install the `v0.0.3` release:
+For projects using **Zig 0.16.0**, install the `0.0.3` release:
 
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz
@@ -56,7 +56,7 @@ Add the dependency to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .brotli = .{
-        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.5.tar.gz",
+        .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.6.tar.gz",
         .hash = "...", // Run `zig fetch --save <url>` to generate the hash.
     },
 },
@@ -115,7 +115,7 @@ defer allocator.free(decompressed);
 ```bash
 zig build                    # Build library
 zig build test --summary all # Run all tests
-zig build run-all-examples   # Run all 11 examples
+zig build run-all-examples   # Run all 10 examples
 ```
 
 If all tests pass, brotli.zig is properly installed.
@@ -137,14 +137,31 @@ zig build -Dtarget=aarch64-macos
 # Build for 32-bit Windows
 zig build -Dtarget=x86-windows
 
+# Build for 32-bit Linux (x86)
+zig build -Dtarget=x86-linux-musl
+
+# Build for 32-bit ARM Linux
+zig build -Dtarget=arm-linux-musleabihf
+
 # Run tests with emulation for cross targets
 zig build test -Dtarget=aarch64-linux --summary all -fqemu
 ```
 
+### Testing 32-bit Correctness
+
+The codec is pointer-width agnostic: entropy-code, distance-code and metablock
+bounds come from the format limits rather than the host address space. Validate
+your own integration against a real 32-bit target:
+
+```bash
+zig build test -Dtarget=x86-windows                       # 32-bit x86, debug
+zig build test -Dtarget=x86-windows -Doptimize=ReleaseSafe # 32-bit x86, optimized
+```
+
 Validated targets:
 
-| Platform | x86_64 (64-bit) | aarch64 (ARM64) | x86 (32-bit) |
-|----------|-----------------|-----------------|--------------|
-| **Linux** | Yes | Yes (via QEMU) | Yes |
-| **Windows** | Yes | Yes | Yes |
-| **macOS** | Yes (via aarch64 runner) | Yes (Apple Silicon) | No |
+| Platform | x86_64 (64-bit) | aarch64 (ARM64) | x86 (32-bit) | armv7 / thumb | riscv32 |
+|----------|-----------------|-----------------|--------------|---------------|---------|
+| **Linux** | Yes | Yes (via QEMU) | Yes | Yes | Yes |
+| **Windows** | Yes | Yes | Yes | - | - |
+| **macOS** | Yes (via aarch64 runner) | Yes (Apple Silicon) | Yes | - | - |

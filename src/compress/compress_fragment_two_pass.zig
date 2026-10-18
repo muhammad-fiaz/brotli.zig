@@ -590,7 +590,7 @@ pub fn compressFragmentTwoPass(
     storage: []u8,
 ) void {
     const initial_storage_ix = storage_ix.*;
-    const table_bits = std.math.log2_int(usize, table.len);
+    const table_bits: usize = std.math.log2_int(usize, table.len);
     const min_match: usize = if (table_bits <= 15) 4 else 6;
 
     if (input.len == 0) {

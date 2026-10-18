@@ -37,10 +37,10 @@ features:
 
 Add `brotli.zig` to your project using `zig fetch`:
 
-### For Zig 0.17.0+ (Latest Release v0.0.5)
+### For Zig 0.17.0+ (Latest Release 0.0.6)
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.5.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.6.tar.gz
 ```
 
 ### For Latest Development (Main Branch)
@@ -49,10 +49,10 @@ zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v
 zig fetch --save git+https://github.com/muhammad-fiaz/brotli.zig.git
 ```
 
-### For Zig 0.16.0 Compatibility (v0.0.3)
+### For Zig 0.16.0 Compatibility (0.0.3)
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/v0.0.3.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz
 ```
 
 ## Acknowledgements

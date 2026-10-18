@@ -89,11 +89,16 @@
 
 `brotli.zig` targets these architectures:
 
-| Platform | x86_64 (64-bit) | aarch64 (ARM64) | x86 (32-bit) |
-|---|---|---|---|
-| **Linux** | Yes | Yes | Yes |
-| **Windows** | Yes | Yes | Yes |
-| **macOS** | Yes | Yes (Apple Silicon) | Yes |
+| Platform | x86_64 (64-bit) | aarch64 (ARM64) | x86 (32-bit) | armv7 / thumb (32-bit) | riscv32 |
+|---|---|---|---|---|---|
+| **Linux** | Yes | Yes | Yes | Yes | Yes |
+| **Windows** | Yes | Yes | Yes | - | - |
+| **macOS** | Yes | Yes (Apple Silicon) | Yes | - | - |
+
+All 32-bit targets are verified in CI, including 32-bit correctness tests on
+`x86-windows` and `x86-linux`. The codec is pointer-width agnostic: every
+entropy-code, distance-code and metablock bound is expressed in terms of the
+format limits rather than the address space of the host.
 
 ### Cross-Compilation
 
@@ -111,6 +116,25 @@ zig build -Dtarget=aarch64-macos
 
 # Build for 32-bit Windows
 zig build -Dtarget=x86-windows
+
+# Build for 32-bit Linux (x86)
+zig build -Dtarget=x86-linux-musl
+
+# Build for 32-bit ARM Linux
+zig build -Dtarget=arm-linux-musleabihf
+
+# Build for 32-bit RISC-V Linux
+zig build -Dtarget=riscv32-linux-musl
+```
+
+### Testing on 32-bit Targets
+
+```bash
+# Full test suite executed as a 32-bit x86 binary
+zig build test -Dtarget=x86-windows
+
+# Same, with safety checks in optimized builds
+zig build test -Dtarget=x86-windows -Doptimize=ReleaseSafe
 ```
 
 </details>
@@ -122,10 +146,10 @@ zig build -Dtarget=x86-windows
 ### Method 1: Zig Fetch (Recommended) - Latest Release
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.5.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.6.tar.gz
 ```
 
-For projects using **Zig 0.16.0**, install the `v0.0.3` release:
+For projects using **Zig 0.16.0**, install the `0.0.3` release:
 
 ```bash
 zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.3.tar.gz
@@ -135,6 +159,25 @@ zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0
 
 ```bash
 zig fetch --save git+https://github.com/muhammad-fiaz/brotli.zig.git
+```
+
+### Method 3: Vendored Checkout
+
+Copy the repository into your project and reference it directly:
+
+```zig
+const brotli = b.dependency("brotli", .{
+    .target = target,
+    .optimize = optimize,
+}).module("brotli");
+```
+
+Add the package to your own `build.zig.zon` without a URL:
+
+```zig
+.dependencies = .{
+    .brotli = .{ .path = "../brotli.zig" },
+},
 ```
 
 ### Wire into `build.zig`
@@ -310,7 +353,7 @@ defer allocator.free(decomp);
 | `brotli.compressStream(alloc, reader, writer, opts)` | Stream compression via `std.Io` |
 | `brotli.decompressStream(alloc, reader, writer, opts)` | Stream decompression via `std.Io` |
 | `brotli.maxCompressedSize(src_size)` | Calculate upper bound on compressed size |
-| `brotli.versionString()` / `versionNumber()` | Library version (`0.0.5` / `5`) |
+| `brotli.versionString()` / `versionNumber()` | Library version (`0.0.6` / `6`) |
 
 ### Types
 

@@ -36,7 +36,7 @@ pub fn main() void {
 ## Output
 
 ```text
-library version : 0.0.5 (5)
+library version : 0.0.6 (6)
 format spec     : 1.2.0
 quality range   : 0..11 (default 11)
 window bits     : 10..24 (large: up to 30)
@@ -47,8 +47,8 @@ distance shorts : 16
 
 ## Explanation
 
-- `versionString()` returns the human-readable `"0.0.5"`;
-  `versionNumber()` returns the encoded integer `5`.
+- `versionString()` returns the human-readable `"0.0.6"`;
+  `versionNumber()` returns the encoded integer `6`.
 - `spec_version` is the Brotli format specification version this library
   targets: `"1.2.0"`.
 - `MIN_QUALITY`/`MAX_QUALITY` bound the `quality` field of

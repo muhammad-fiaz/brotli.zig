@@ -2,83 +2,126 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
     branches: [main, dev]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZIG_VERSION: 0.17.0
+
 jobs:
-  fmt:
+  # Formatting plus the default 64-bit host verification, all sharing one
+  # checkout and one Zig install instead of four separate jobs.
+  verify:
+    name: fmt, native tests, fuzz, examples
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.17.0
+          version: ${{ env.ZIG_VERSION }}
       - name: Check formatting
         run: zig fmt --check src/ examples/
+      - name: Test
+        run: zig build test --summary all
+      - name: Fuzz
+        run: zig build fuzz
+      # `run-all-examples` builds and runs every example in one step, so this
+      # covers all of them (including io_pipeline) without a 10-way job matrix.
+      - name: Examples
+        run: zig build run-all-examples
 
-  build:
+  # Every Linux architecture executes the full suite. 32-bit entries run in
+  # both Debug (full overflow checks) and ReleaseSafe, because Log2Int(usize) is
+  # u6 on a 64-bit host but only u5 on 32-bit: entropy-code symbol arithmetic
+  # that is fine at 64 bits silently overflows at 32 bits and traps at runtime.
+  # musl targets are used so `-fqemu` can execute them without a foreign loader.
+  test-linux:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
-      - run: zig build
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
-      - run: zig build test --summary all
-
-  fuzz:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
-      - run: zig build fuzz
-
-  examples:
-    runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        example:
-          - compress_file
-          - streaming_compression
-          - decompress_file
-          - streaming_decompression
-          - dictionary_compression
-          - reusable_context
-          - error_handling
-          - format_introspection
-          - bit_level
+        include:
+          - { name: x86_64-linux,     target: x86_64-linux-gnu,      optimize: Debug,       qemu: false }
+          - { name: aarch64-linux,    target: aarch64-linux-musl,    optimize: Debug,       qemu: true }
+          - { name: x86-linux,        target: x86-linux-musl,       optimize: Debug,       qemu: true }
+          - { name: x86-linux-safe,   target: x86-linux-musl,       optimize: ReleaseSafe, qemu: true }
+          - { name: arm-linux,        target: arm-linux-musleabihf, optimize: Debug,       qemu: true }
+          - { name: arm-linux-safe,   target: arm-linux-musleabihf, optimize: ReleaseSafe, qemu: true }
+          - { name: thumb-linux,      target: thumb-linux-musleabihf, optimize: Debug,     qemu: true }
+          - { name: riscv32-linux,    target: riscv32-linux-musl,   optimize: Debug,       qemu: true }
     steps:
       - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.17.0
-      - run: zig build run-${{ matrix.example }}
+          version: ${{ env.ZIG_VERSION }}
+      - run: >-
+          zig build test
+          -Dtarget=${{ matrix.target }}
+          -Doptimize=${{ matrix.optimize }}
+          ${{ matrix.qemu && '-fqemu' || '' }} --summary all
 
-  cross-target:
+  # Windows binaries execute natively on a Windows runner, which is what makes
+  # real 32-bit x86 coverage possible without emulation.
+  test-windows:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - aarch64-linux
-          - x86_64-windows
-          - aarch64-macos
-          - x86-windows
-    runs-on: ubuntu-latest
+        include:
+          - { name: x86-windows,    target: x86-windows,    os: windows-latest }
+          - { name: x86_64-windows, target: x86_64-windows, os: windows-latest }
     steps:
       - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.17.0
+          version: ${{ env.ZIG_VERSION }}
+      - run: zig build test -Dtarget=${{ matrix.target }} --summary all
+
+  test-macos:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: aarch64-macos, target: aarch64-macos, os: macos-latest }
+          - { name: x86_64-macos, target: x86_64-macos, os: macos-13 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - run: zig build test -Dtarget=${{ matrix.target }} --summary all
+
+  # Targets whose tests cannot be executed on any runner. Zig 0.17.0's own test
+  # runner fails to compile for i386 macOS (std.debug.cpu_context reaches
+  # unreachable), so x86-macos is verified as a library build only. The library
+  # and all examples still compile for it.
+  build-only:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: x86-macos, target: x86-macos }
+          - { name: arm-linux-gnueabihf, target: arm-linux-gnueabihf }
+          - { name: x86-freestanding, target: x86-freestanding }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
       - run: zig build -Dtarget=${{ matrix.target }}
