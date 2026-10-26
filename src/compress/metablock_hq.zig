@@ -751,19 +751,8 @@ fn clusterBlocks(
             pairs_list.items,
             num_to_combine,
             num_to_combine,
-            CLUSTERS_PER_BATCH,
+            HISTOGRAMS_PER_BATCH,
             max_num_pairs,
-        );
-
-        histogramRemap(
-            alphabet_size,
-            histograms[0..num_to_combine],
-            num_to_combine,
-            new_clusters[0..num_new_clusters],
-            num_new_clusters,
-            histograms[0..num_to_combine],
-            &tmp[0],
-            symbols[0..num_to_combine],
         );
 
         for (0..num_new_clusters) |j| {
@@ -798,7 +787,7 @@ fn clusterBlocks(
         pairs_list.items,
         num_clusters,
         num_blocks,
-        CLUSTERS_PER_BATCH,
+        256,
         max_num_pairs2,
     );
 
@@ -1300,7 +1289,7 @@ pub fn buildMetaBlockHQ(
                 const lit_type = mb.literal_split.types.items[lit_block_idx];
                 const literal = ringbuffer[cur_pos & mask];
                 const ctx = context_mod.contextId(prev_byte, prev_byte2, literal_context_mode);
-                raw_literal_histograms[(lit_type << 6) + ctx].add(literal);
+                raw_literal_histograms[(@as(usize, lit_type) << 6) + ctx].add(literal);
                 prev_byte2 = prev_byte;
                 prev_byte = literal;
                 cur_pos += 1;
@@ -1317,7 +1306,7 @@ pub fn buildMetaBlockHQ(
                     dist_block_rem -= 1;
                     const dist_type = mb.distance_split.types.items[dist_block_idx];
                     const dist_ctx = commandDistanceContext(&cmd);
-                    raw_distance_histograms[(dist_type << 2) + dist_ctx].add(cmd.dist_prefix_ & 0x3FF);
+                    raw_distance_histograms[(@as(usize, dist_type) << 2) + dist_ctx].add(cmd.dist_prefix_ & 0x3FF);
                 }
             }
         }

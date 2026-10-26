@@ -21,7 +21,7 @@ Add brotli.zig to your `build.zig.zon`:
 
 ```zig
 .brotli = .{
-    .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.6.tar.gz",
+    .url = "https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.7.tar.gz",
     .hash = "...",  // use zig fetch --save to get the hash
 },
 ```

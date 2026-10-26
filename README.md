@@ -146,7 +146,7 @@ zig build test -Dtarget=x86-windows -Doptimize=ReleaseSafe
 ### Method 1: Zig Fetch (Recommended) - Latest Release
 
 ```bash
-zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.6.tar.gz
+zig fetch --save https://github.com/muhammad-fiaz/brotli.zig/archive/refs/tags/0.0.7.tar.gz
 ```
 
 For projects using **Zig 0.16.0**, install the `0.0.3` release:
@@ -353,7 +353,7 @@ defer allocator.free(decomp);
 | `brotli.compressStream(alloc, reader, writer, opts)` | Stream compression via `std.Io` |
 | `brotli.decompressStream(alloc, reader, writer, opts)` | Stream decompression via `std.Io` |
 | `brotli.maxCompressedSize(src_size)` | Calculate upper bound on compressed size |
-| `brotli.versionString()` / `versionNumber()` | Library version (`0.0.6` / `6`) |
+| `brotli.versionString()` / `versionNumber()` | Library version (`0.0.7` / `7`) |
 
 ### Types
 

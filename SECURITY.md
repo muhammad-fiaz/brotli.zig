@@ -4,8 +4,9 @@
 
 | Version | Supported          |
 |---------|--------------------|
+| 0.0.7   | :white_check_mark: |
 | 0.0.6   | :white_check_mark: |
-| 0.0.5   | :white_check_mark: |
+| 0.0.5   | :x:                |
 | 0.0.4   | :x:                |
 | < 0.0.4 | :x:                |
 
@@ -45,7 +46,7 @@ match can span the boundary, for example a payload of the form
 `"ABCD" * n` with `n` large enough to exceed the block size.
 
 Applications that accept untrusted compressed data, or compress untrusted or
-generated input, should upgrade to `0.0.6` or later.
+generated input, should upgrade to `0.0.7` or later.
 
 ## Reporting a Vulnerability
 
