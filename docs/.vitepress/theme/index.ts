@@ -1,10 +1,17 @@
 import DefaultTheme from "vitepress/theme";
 import { useData } from "vitepress";
 import type { Theme } from "vitepress";
+import CopyOrDownloadAsMarkdownButtons from "vitepress-plugin-llms/vitepress-components/CopyOrDownloadAsMarkdownButtons.vue";
 import "./custom.css";
 
 export default {
   extends: DefaultTheme,
+  enhanceApp({ app }) {
+    app.component(
+      "CopyOrDownloadAsMarkdownButtons",
+      CopyOrDownloadAsMarkdownButtons,
+    );
+  },
   Layout() {
     return h(DefaultTheme.Layout, null, {
       "doc-before": () => h(Breadcrumbs),
