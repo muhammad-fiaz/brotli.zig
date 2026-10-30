@@ -1,6 +1,7 @@
 import { defineConfig } from "vitepress";
+import llmstxt from "vitepress-plugin-llms";
 
-export const SITE_URL = "https://muhammad-fiaz.github.io/brotli.zig/";
+export const SITE_URL = "https://muhammad-fiaz.github.io/brotli.zig";
 export const SITE_NAME = "brotli.zig";
 export const SITE_DESCRIPTION =
   "A complete native Zig implementation of Brotli compression. No C bindings, no dependencies. Supports compression, decompression, streaming, and dictionary-based operations.";
@@ -8,6 +9,8 @@ export const SITE_DESCRIPTION =
 export const GA_ID = "G-6BVYCRK57P";
 export const GTM_ID = "GTM-P4M9T8ZR";
 export const ADSENSE_CLIENT_ID = "ca-pub-2040560600290490";
+
+export const CLARITY_ID = "z5vdzih779";
 
 export const KEYWORDS =
   "zig, brotli, brotli, compression, decompression, native, pure-zig, streaming, dictionary, lossless, data-compression, binary";
@@ -21,7 +24,11 @@ export default defineConfig({
   cleanUrls: false,
 
   sitemap: {
-    hostname: SITE_URL,
+    hostname: `${SITE_URL}/`,
+  },
+
+  vite: {
+    plugins: [llmstxt()],
   },
 
   head: [
@@ -76,7 +83,7 @@ export default defineConfig({
     ["meta", { name: "twitter:site", content: "@muhammadfiaz_" }],
     ["meta", { name: "twitter:creator", content: "@muhammadfiaz_" }],
 
-    ["link", { rel: "canonical", href: SITE_URL }],
+    // Canonical URL is emitted per page in transformPageData below.
 
     ["link", { rel: "icon", type: "image/svg+xml", href: "/brotli.zig/favicon.svg" }],
     ["link", { rel: "icon", type: "image/png", sizes: "32x32", href: "/brotli.zig/favicon.svg" }],
@@ -107,11 +114,6 @@ gtag('config', '${GA_ID}');`,
             {},
             `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start': new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0], j=d.createElement(s), dl=l!='dataLayer'?'&l='+l:''; j.async=true; j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl; f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${GTM_ID}');`,
           ],
-          [
-            "noscript",
-            {},
-            `<iframe src="https://www.googletagmanager.com/ns.html?id=${GTM_ID}" height="0" width="0" style="display:none;visibility:hidden"></iframe>`,
-          ],
         ] as [string, Record<string, string>, string][])
       : []),
 
@@ -123,21 +125,45 @@ gtag('config', '${GA_ID}');`,
         crossorigin: "anonymous",
       },
     ],
+
+    // Microsoft Clarity
+    ...(CLARITY_ID
+      ? ([
+          [
+            "script",
+            {},
+            `(function(c,l,a,r,i,t,y){
+              c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+              t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+              y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+            })(window, document, "clarity", "script", "${CLARITY_ID}");`,
+          ],
+        ] as [string, Record<string, string>, string][])
+      : []),
   ],
+
+  transformHtml(html) {
+    if (!GTM_ID) return html;
+    const noscript = `<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=${GTM_ID}" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>`;
+    return html.replace(/<body([^>]*)>/, `<body$1>\n    ${noscript}`);
+  },
 
   ignoreDeadLinks: [/.*\.zig$/],
 
   transformPageData(pageData: any) {
     const pageTitle = pageData.title || SITE_NAME;
     const pageDescription = pageData.description || SITE_DESCRIPTION;
-    const normalizedPath = pageData.relativePath
-      .replace(/\.md$/, "")
-      .replace(/(^|\/)index$/, "$1")
-      .replace(/\/$/, "");
-    const canonicalUrl =
-      normalizedPath.length > 0
-        ? `${SITE_URL}/${normalizedPath}`
-        : SITE_URL;
+    // Resolve the published URL. cleanUrls is disabled, so regular pages end
+    // in `.html` while directory index pages keep their trailing slash.
+    const cleanPath = pageData.relativePath.replace(/\.md$/, "");
+    let canonicalUrl: string;
+    if (cleanPath === "index") {
+      canonicalUrl = `${SITE_URL}/`;
+    } else if (cleanPath.endsWith("/index")) {
+      canonicalUrl = `${SITE_URL}/${cleanPath.slice(0, -"index".length)}`;
+    } else {
+      canonicalUrl = `${SITE_URL}/${cleanPath}.html`;
+    }
 
     pageData.frontmatter.head ??= [];
     pageData.frontmatter.head.push(
@@ -150,6 +176,7 @@ gtag('config', '${GA_ID}');`,
         },
       ],
       ["meta", { property: "og:url", content: canonicalUrl }],
+      ["meta", { name: "twitter:url", content: canonicalUrl }],
     );
 
     if (pageData.frontmatter.description) {
