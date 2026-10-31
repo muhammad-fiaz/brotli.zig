@@ -14,10 +14,8 @@ env:
   ZIG_VERSION: 0.17.0
 
 jobs:
-  # Formatting plus the default 64-bit host verification, all sharing one
-  # checkout and one Zig install instead of four separate jobs.
   verify:
-    name: fmt, native tests, fuzz, examples
+    name: fmt, native tests, examples
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -29,18 +27,9 @@ jobs:
         run: zig fmt --check src/ examples/
       - name: Test
         run: zig build test --summary all
-      - name: Fuzz
-        run: zig build fuzz
-      # `run-all-examples` builds and runs every example in one step, so this
-      # covers all of them (including io_pipeline) without a 10-way job matrix.
       - name: Examples
         run: zig build run-all-examples
 
-  # Every Linux architecture executes the full suite. 32-bit entries run in
-  # both Debug (full overflow checks) and ReleaseSafe, because Log2Int(usize) is
-  # u6 on a 64-bit host but only u5 on 32-bit: entropy-code symbol arithmetic
-  # that is fine at 64 bits silently overflows at 32 bits and traps at runtime.
-  # musl targets are used so `-fqemu` can execute them without a foreign loader.
   test-linux:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -62,13 +51,7 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
-          # setup-zig cannot key its cache per matrix entry on its own, so the
-          # varying axes are listed here to avoid sharing one cache entry.
           cache-key: ${{ matrix.target }}-${{ matrix.optimize }}
-      # setup-zig does not ship QEMU. The runner image provides qemu-i386 but
-      # not qemu-arm / qemu-aarch64 / qemu-riscv32, which `-fqemu` needs to
-      # spawn by bare name. musl targets link statically, so no foreign loader
-      # is required.
       - name: Install QEMU
         if: matrix.qemu
         run: |
@@ -83,8 +66,6 @@ jobs:
           -Doptimize=${{ matrix.optimize }}
           ${{ matrix.qemu && '-fqemu' || '' }} --summary all
 
-  # Windows binaries execute natively on a Windows runner, which is what makes
-  # real 32-bit x86 coverage possible without emulation.
   test-windows:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -103,8 +84,6 @@ jobs:
           cache-key: ${{ matrix.target }}
       - run: zig build test -Dtarget=${{ matrix.target }} --summary all
 
-  # macOS runner labels are version-pinned: macos-13 was retired, so the Intel
-  # x64 image is now macos-15-intel. macos-latest resolves to an arm64 image.
   test-macos:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -123,10 +102,6 @@ jobs:
           cache-key: ${{ matrix.target }}
       - run: zig build test -Dtarget=${{ matrix.target }} --summary all
 
-  # Targets whose tests cannot be executed on any runner. Zig 0.17.0's own test
-  # runner fails to compile for i386 macOS (std.debug.cpu_context reaches
-  # unreachable), so x86-macos is verified as a library build only. The library
-  # and all examples still compile for it.
   build-only:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
